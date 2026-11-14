@@ -18,10 +18,12 @@ function sampleDates(end: string, days: number, step: number): string[] {
 
 /**
  * SMAP L4 real via NASA GIBS (superficial 0–5 cm e zona das raízes 0–100 cm, grade de 9 km).
- * Amostra os últimos 60 dias a cada 2 dias. Dias sem produto publicado retornam null.
+ * Por padrão amostra os últimos 60 dias a cada 2 dias; períodos maiores aumentam o passo para
+ * manter ~45 consultas. Dias sem produto publicado retornam null.
  */
-export async function fetchSmapReal(lat: number, lon: number, end: string): Promise<SoilMoistureResult> {
-  const dates = sampleDates(end, 60, 2);
+export async function fetchSmapReal(lat: number, lon: number, end: string, days = 60): Promise<SoilMoistureResult> {
+  const step = Math.max(2, Math.ceil(days / 45));
+  const dates = sampleDates(end, days, step);
   const common = { colormap: SMAP_SOURCE.colormap, lat, lon, halfDeg: 0.05 };
   const records: DailySoilMoisture[] = await mapLimit(dates, 6, async (date) => {
     const [surface, rootZone] = await Promise.all([
@@ -46,7 +48,7 @@ export async function fetchSmapReal(lat: number, lon: number, end: string): Prom
  * MOCK DOCUMENTADO — balanço hídrico simples alimentado pela chuva do mock POWER.
  * Usado no modo "dados simulados" ou quando a NASA não responde.
  */
-export async function fetchSmapMock(lat: number, lon: number, start: string, end: string): Promise<SoilMoistureResult> {
+export async function fetchSmapMock(lat: number, lon: number, start: string, end: string, lastDays = 60): Promise<SoilMoistureResult> {
   await new Promise((r) => setTimeout(r, 250));
   const climate = generateMockClimate(lat, lon, start, end);
   const rand = seededRandom(hashCoords(lat, lon) + 31);
@@ -60,7 +62,7 @@ export async function fetchSmapMock(lat: number, lon: number, start: string, end
     root = clamp(root + rain * 0.0012 - et * 0.18 - (root - base) * 0.015, 0.06, 0.38);
     return { date: c.date, surface: round(surface + (rand() - 0.5) * 0.01, 3), rootZone: round(root, 3) };
   });
-  const last60 = records.slice(-60);
+  const last60 = records.slice(-lastDays);
   return {
     origin: "simulado",
     source: `${SMAP_SOURCE.name} (simulado)`,

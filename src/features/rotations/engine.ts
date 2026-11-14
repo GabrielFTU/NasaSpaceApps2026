@@ -23,7 +23,7 @@ import { ZARC_CROPS, windowLabel, zarcKey } from "@/services/zarc";
  * percentual e NÃO constituem recomendação agronômica validada.
  */
 
-export const ENGINE_VERSION = "regras-demo-0.2-zarc";
+export const ENGINE_VERSION = "regras-demo-0.3-solo";
 export const SLOT_LABELS = ["Verão 1", "Inverno 1", "Verão 2", "Inverno 2"] as const;
 
 type Sequence = [string, string, string, string];
@@ -82,6 +82,37 @@ function zarcCheck(cr: Crop, i: number, zarc: ZarcResult | undefined): { zarc?: 
   };
 }
 
+/* Limiares das regras que usam o cadastro completo de solo (demonstrativos, a validar). */
+const SHALLOW_CM = 50;
+const HIGH_M_PCT = 20;
+const LOW_V_PCT = 50;
+const AD_LOW_MM = 40;
+const AD_MID_MM = 70;
+
+/**
+ * Retenção de água no solo. Com água disponível MEDIDA (CC, PMP e profundidade efetiva do laudo),
+ * usa o valor calculado; sem ela, cai na regra pela textura (solo arenoso = baixa retenção).
+ */
+function waterRetentionPenalty(cr: Crop, input: AnalysisInput): { points: number; slotIssue?: string; rule?: string } {
+  const ad = input.soilEvidence?.availableWaterMm;
+  if (ad) {
+    const low = ad.value < AD_LOW_MM;
+    const mid = ad.value < AD_MID_MM;
+    const points = low ? (cr.sandyTolerance === "baixa" ? -15 : cr.sandyTolerance === "media" ? -5 : 0) : mid && cr.sandyTolerance === "baixa" ? -5 : 0;
+    return {
+      points,
+      slotIssue: low && cr.sandyTolerance === "baixa" ? `Água disponível de ${fmt.n0(ad.value)} mm na zona radicular (laudo) é baixa para esta cultura.` : undefined,
+      rule: `Água disponível calculada do laudo: ${fmt.n0(ad.value)} mm — desconto para culturas com tolerância média/baixa (já incluído na média)`,
+    };
+  }
+  if (input.soil.texture !== "arenosa") return { points: 0 };
+  return {
+    points: cr.sandyTolerance === "baixa" ? -15 : cr.sandyTolerance === "media" ? -5 : 0,
+    slotIssue: cr.sandyTolerance === "baixa" ? "Baixa tolerância a solo arenoso (menor retenção de água)." : undefined,
+    rule: "Solo arenoso: desconto para culturas com tolerância média/baixa (já incluído na média)",
+  };
+}
+
 function evaluateSlot(i: number, seq: Sequence, input: AnalysisInput, climate: ClimateSummary, zarc?: ZarcResult): SlotEvaluation {
   const id = seq[i];
   const cr = crop(id);
@@ -109,15 +140,26 @@ function evaluateSlot(i: number, seq: Sequence, input: AnalysisInput, climate: C
   }
   if (input.soil.ph !== null && (input.soil.ph < cr.phRange[0] - 0.2 || input.soil.ph > cr.phRange[1] + 0.2)) {
     issues++;
-    notes.push(`pH informado (${fmt.n1(input.soil.ph)}) fora da faixa de referência (${fmt.n1(cr.phRange[0])}–${fmt.n1(cr.phRange[1])}); avaliar correção.`);
+    const est = input.soilEvidence?.phWater?.source === "estimado" ? " (convertido de CaCl₂)" : "";
+    notes.push(`pH em água${est} ${fmt.n1(input.soil.ph)} fora da faixa de referência (${fmt.n1(cr.phRange[0])}–${fmt.n1(cr.phRange[1])}); avaliar correção.`);
   }
   if (!isSummerSlot(i) && cr.frostSensitive && climate.frostRiskDays > 0 && !cr.annual) {
     issues++;
     notes.push(`Sensível a geada: ${climate.frostRiskDays} dia(s) com mínima ≤ 2 °C nos últimos 12 meses.`);
   }
-  if (input.soil.texture === "arenosa" && cr.sandyTolerance === "baixa") {
+  const wp = waterRetentionPenalty(cr, input);
+  if (wp.slotIssue) {
     issues++;
-    notes.push("Baixa tolerância a solo arenoso (menor retenção de água).");
+    notes.push(wp.slotIssue);
+  }
+  const ev = input.soilEvidence;
+  if (ev?.effectiveDepthCm && ev.effectiveDepthCm.value < SHALLOW_CM && cr.role === "comercial") {
+    issues++;
+    notes.push(`Profundidade efetiva de ${fmt.n0(ev.effectiveDepthCm.value)} cm (laudo) limita o desenvolvimento das raízes.`);
+  }
+  if (ev?.aluminumSaturation && ev.aluminumSaturation.value >= HIGH_M_PCT && cr.phRange[0] >= 5.5) {
+    issues++;
+    notes.push(`Saturação por alumínio de ${fmt.n0(ev.aluminumSaturation.value)}% (${ev.aluminumSaturation.depth}) — cultura sensível à acidez; avaliar calagem/gessagem.`);
   }
   if (input.soil.drainage === "ruim" && cr.family === "leguminosa") {
     issues++;
@@ -206,14 +248,14 @@ function scoreSequence(seq: Sequence, input: AnalysisInput, climate: ClimateSumm
     if (!cr) return;
     if (cr.annual && i % 2 === 1) return; // conta a anual uma vez por ano
     const mid = (cr.waterNeedMm[0] + cr.waterNeedMm[1]) / 2;
-    let s = waterSlotScore(seasonPrecip(i, seq, climate) / mid);
-    if (sandy && cr.sandyTolerance === "baixa") s -= 15;
-    if (sandy && cr.sandyTolerance === "media") s -= 5;
+    const s = waterSlotScore(seasonPrecip(i, seq, climate) / mid) + waterRetentionPenalty(cr, input).points;
     waterScores.push(clamp(s, 0, 100));
   });
   const water = waterScores.length ? waterScores.reduce((a, b) => a + b, 0) / waterScores.length : 50;
   log.add("agua", "Média das posições: razão entre chuva observada na estação e necessidade hídrica de referência", round(water, 0));
-  if (sandy) log.add("agua", "Solo arenoso: desconto para culturas com tolerância média/baixa (já incluído na média)", 0);
+  const firstCrop = seq.map(crop).find((c): c is Crop => c !== null);
+  const retentionRule = firstCrop ? waterRetentionPenalty(firstCrop, input).rule : undefined;
+  if (retentionRule) log.add("agua", retentionRule, 0);
 
   // --- Produtividade potencial (índice relativo)
   let prod = 50;
@@ -297,6 +339,8 @@ function describe(seq: Sequence, slots: SlotEvaluation[], indicators: Record<Pri
     .filter((s) => s.compatibility === "baixa")
     .forEach((s) => limitations.push(`${s.slot} — ${cropName(s.cropId)}: compatibilidade baixa com as condições informadas.`));
   if (indicators.agua < 60) limitations.push("Chuva observada abaixo da referência em parte das posições; maior risco de déficit hídrico.");
+  const v = input.soilEvidence?.baseSaturation;
+  if (v && v.value < LOW_V_PCT) limitations.push(`Saturação por bases de ${fmt.n0(v.value)}% no laudo: avaliar calagem conforme a recomendação regional.`);
 
   return { benefits: [...new Set(benefits)], limitations: [...new Set(limitations)] };
 }
@@ -387,7 +431,7 @@ export const METHOD_NOTES: { title: string; body: string }[] = [
   },
   {
     title: "Disponibilidade hídrica",
-    body: "Para cada posição, compara a chuva acumulada na estação nos últimos 12 meses (NASA POWER, PRECTOTCORR) com o ponto médio da necessidade hídrica de referência da cultura. Razão ≥ 1,2 → 100; 1,0–1,2 → 85; 0,8–1,0 → 65; 0,6–0,8 → 45; abaixo → 25. Solo arenoso desconta 5 a 15 pontos conforme a tolerância. Volume total não considera distribuição das chuvas, escoamento ou armazenamento no solo.",
+    body: "Para cada posição, compara a chuva acumulada na estação nos últimos 12 meses (NASA POWER, PRECTOTCORR) com o ponto médio da necessidade hídrica de referência da cultura. Razão ≥ 1,2 → 100; 1,0–1,2 → 85; 0,8–1,0 → 65; 0,6–0,8 → 45; abaixo → 25. Retenção de água: com laudo (CC, PMP e profundidade efetiva), usa a água disponível calculada na zona radicular de até 50 cm — abaixo de 40 mm desconta 5 a 15 pontos conforme a tolerância da cultura; de 40 a 70 mm, 5 pontos para tolerância baixa. Sem laudo, solo arenoso desconta 5 a 15 pontos. Volume total não considera distribuição das chuvas, escoamento ou armazenamento no solo.",
   },
   {
     title: "Produtividade potencial (índice relativo)",
@@ -399,7 +443,11 @@ export const METHOD_NOTES: { title: string; body: string }[] = [
   },
   {
     title: "Compatibilidade por posição",
-    body: "Alta quando nenhuma restrição é encontrada; média com uma; baixa com duas ou mais. Restrições: chuva da estação abaixo de 80% da referência, pH fora da faixa de referência, risco de geada para culturas sensíveis no inverno, baixa tolerância a solo arenoso, drenagem ruim para leguminosas e situação no ZARC (abaixo).",
+    body: "Alta quando nenhuma restrição é encontrada; média com uma; baixa com duas ou mais. Restrições: chuva da estação abaixo de 80% da referência, pH fora da faixa de referência, risco de geada para culturas sensíveis no inverno, baixa tolerância a solo arenoso (ou água disponível medida abaixo de 40 mm), drenagem ruim para leguminosas e situação no ZARC (abaixo).",
+  },
+  {
+    title: "Dados de laudo (cadastro completo)",
+    body: "Só amostras confirmadas entram no motor, usando a coleta mais recente. Argila medida define a textura (< 15% arenosa; 15–35% média; 35–60% argilosa; ≥ 60% muito argilosa). pH em CaCl₂ é convertido para água somando 0,6 (aproximação). Profundidade efetiva abaixo de 50 cm e saturação por alumínio ≥ 20% em qualquer camada (para culturas com pH de referência a partir de 5,5) contam como restrição. V% abaixo de 50% gera um alerta de calagem, sem pontuar. Limiares demonstrativos: mais dados tornam a avaliação mais específica, mas não comprovam maior precisão — isso exige validação agronômica.",
   },
   {
     title: "Zoneamento Agrícola de Risco Climático (ZARC)",

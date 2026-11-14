@@ -12,14 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { Callout } from "@/components/ui/misc";
 import { toast } from "@/components/ui/toast";
 import { CROPS, CROP_GROUP_LABEL, CROP_MAP, DRAINAGE_LABEL, FALLOW_ID, PRIORITY_LABEL, SOIL_TEXTURE_LABEL, cropName } from "@/data/crops";
-import { getDailyClimate } from "@/services/nasa";
-import { getZarc } from "@/services/zarc";
 import { fmt } from "@/lib/format";
-import { cn, uid } from "@/lib/utils";
-import type { Analysis, Crop, CropGroup, Priorities, PriorityKey, SoilProfile, ZarcSeason } from "@/types";
+import { cn } from "@/lib/utils";
+import type { Crop, CropGroup, Priorities, PriorityKey, SoilProfile, ZarcSeason } from "@/types";
 import { Stepper } from "./components/Stepper";
-import { summarizeClimate } from "./climateSummary";
-import { ENGINE_VERSION, generateComparison } from "@/features/rotations/engine";
+import { runAnalysis } from "./runAnalysis";
+import { deriveSoilEvidence, effectiveSoilProfile } from "@/features/soil/model";
+import { SoilEvidenceSummary } from "@/features/soil/SoilEvidenceSummary";
 
 const STEPS = ["Propriedade", "Culturas", "Solo", "Prioridades", "Revisão"];
 const MAX_INTEREST = 6;
@@ -31,6 +30,7 @@ export function AnalysisWizardPage() {
   const selectedPropertyId = useAppStore((s) => s.selectedPropertyId);
   const powerMode = useAppStore((s) => s.settings.powerMode);
   const saveAnalysis = useAppStore((s) => s.saveAnalysis);
+  const soilSamples = useAppStore((s) => s.soilSamples);
   const navigate = useNavigate();
   const [params] = useSearchParams();
 
@@ -54,6 +54,7 @@ export function AnalysisWizardPage() {
   const [groupFilter, setGroupFilter] = useState<CropGroup | "todas">("todas");
   const [onlyZoned, setOnlyZoned] = useState(true);
   const zarc = useZarc(property);
+  const evidence = useMemo(() => (property ? deriveSoilEvidence(property, soilSamples) : null), [property, soilSamples]);
 
   const summerOptions = useMemo(() => CROPS.filter((c) => c.role === "comercial" && c.seasons.includes("verao") && !c.annual), []);
   const winterOptions = useMemo(() => CROPS.filter((c) => c.seasons.includes("inverno") && !c.annual), []);
@@ -112,10 +113,11 @@ export function AnalysisWizardPage() {
   }
 
   const loadSoilFromProperty = () => {
-    if (!property) return;
-    setSoil(property.soil);
-    setPhText(property.soil.ph === null ? "" : String(property.soil.ph).replace(".", ","));
-    setMoText(property.soil.organicMatter === null ? "" : String(property.soil.organicMatter).replace(".", ","));
+    if (!property || !evidence) return;
+    const eff = effectiveSoilProfile(property.soil, evidence);
+    setSoil(eff);
+    setPhText(eff.ph === null ? "" : String(eff.ph).replace(".", ","));
+    setMoText(eff.organicMatter === null ? "" : String(eff.organicMatter).replace(".", ","));
   };
 
   const validate = (s: number): Record<string, string> => {
@@ -164,38 +166,15 @@ export function AnalysisWizardPage() {
     setGenerating(true);
     setGenError(null);
     try {
-      const [series, zarc] = await Promise.all([
-        getDailyClimate(property.latitude, property.longitude, powerMode),
-        getZarc({ city: property.city, state: property.state }, soil.texture),
-      ]);
-      const climate = summarizeClimate(series);
-      const input = {
-        propertyId: property.id,
+      const analysis = await runAnalysis({
+        property,
+        samples: soilSamples,
         currentRotation: { verao: currentVerao, inverno: currentInverno },
         interestCropIds: interest,
-        soil,
         priorities,
-      };
-      await new Promise((r) => setTimeout(r, 500));
-      const scenarios = generateComparison(input, climate, zarc);
-      const analysis: Analysis = {
-        id: uid("an"),
-        createdAt: new Date().toISOString(),
-        propertyId: property.id,
-        propertySnapshot: {
-          name: property.name,
-          city: property.city,
-          state: property.state,
-          latitude: property.latitude,
-          longitude: property.longitude,
-          areaHa: property.areaHa,
-        },
-        input,
-        climate,
-        zarc,
-        scenarios,
-        engineVersion: ENGINE_VERSION,
-      };
+        powerMode,
+        soil,
+      });
       saveAnalysis(analysis);
       toast.success("Comparação gerada", "A análise foi salva no histórico.");
       navigate(`/analise/${analysis.id}`);
@@ -339,8 +318,15 @@ export function AnalysisWizardPage() {
           <>
             <CardHeader>
               <CardTitle>Solo</CardTitle>
-              <CardDescription>Já preenchido com o cadastro.</CardDescription>
+              <CardDescription>
+                {evidence?.sample ? "Já preenchido com o laudo confirmado e o cadastro." : "Já preenchido com o cadastro."}
+              </CardDescription>
             </CardHeader>
+            {evidence && (
+              <div className="px-5 pb-4">
+                <SoilEvidenceSummary evidence={evidence} propertyId={property!.id} compact />
+              </div>
+            )}
             <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-4">
               <Field label="Textura">
                 {(p) => (

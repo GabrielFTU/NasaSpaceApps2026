@@ -56,7 +56,9 @@ export function generateMockClimate(lat: number, lon: number, start: string, end
   let tempAnom = 0;
   let coldFront = 0; // dias restantes de massa de ar frio
 
-  for (let d = parseISODate(ORIGIN); d <= endDate; d.setDate(d.getDate() + 1)) {
+  // períodos históricos anteriores a ORIGIN começam no próprio início pedido
+  const first = start < ORIGIN ? start : ORIGIN;
+  for (let d = parseISODate(first); d <= endDate; d.setDate(d.getDate() + 1)) {
     const m = d.getMonth();
     const r1 = rand();
     const r2 = rand();

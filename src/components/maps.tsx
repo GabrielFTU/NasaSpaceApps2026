@@ -15,10 +15,10 @@ const OSM_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenS
 
 export type BaseLayer = "satelite" | "mapa";
 
-const MAX_ZOOM = 19;
+export const MAX_ZOOM = 19;
 const SATELLITE_NATIVE_ZOOM = 17;
 
-function BaseTiles({ layer, labels = true }: { layer: BaseLayer; labels?: boolean }) {
+export function BaseTiles({ layer, labels = true }: { layer: BaseLayer; labels?: boolean }) {
   if (layer === "mapa") return <TileLayer key="osm" url={OSM_URL} attribution={OSM_ATTR} maxZoom={MAX_ZOOM} maxNativeZoom={19} />;
   return (
     <>

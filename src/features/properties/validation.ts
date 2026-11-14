@@ -56,15 +56,21 @@ export function toPropertyInput(v: PropertyFormValues): PropertyInput {
     longitude: Number(lon.toFixed(6)),
     boundary: v.boundary.map(([a, b]) => [Number(a.toFixed(6)), Number(b.toFixed(6))]),
     areaHa: round(polygonAreaHa(v.boundary), 2),
-    soil: {
-      texture: v.texture,
-      ph: v.ph.trim() === "" ? null : num(v.ph),
-      organicMatter: v.organicMatter.trim() === "" ? null : num(v.organicMatter),
-      drainage: v.drainage,
-      compaction: v.compaction,
-      erosionHistory: v.erosionHistory,
-      notes: v.notes.trim() || undefined,
-    },
+    soil: soilFromValues(v),
+  };
+}
+
+/** Perfil declarado (cadastro simples); valores inválidos viram "não informado". */
+export function soilFromValues(v: PropertyFormValues): SoilProfile {
+  const opt = (s: string) => (isNum(s) ? num(s) : null);
+  return {
+    texture: v.texture,
+    ph: opt(v.ph),
+    organicMatter: opt(v.organicMatter),
+    drainage: v.drainage,
+    compaction: v.compaction,
+    erosionHistory: v.erosionHistory,
+    notes: v.notes.trim() || undefined,
   };
 }
 

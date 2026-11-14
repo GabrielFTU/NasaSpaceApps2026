@@ -57,6 +57,17 @@ Rode de novo quando o MAPA publicar novas portarias (o dataset é atualizado sem
 Toda a interface consome apenas `services/nasa/index.ts`; trocar mock por API real, Supabase ou uma API .NET acontece somente ali.
 Cada valor exibido é marcado como **Dado real**, **Simulado** ou **Indisponível**.
 
+## Cadastro de solo (simples e completo)
+
+O formulário da propriedade alterna entre **Cadastro simples** (textura declarada, pH, M.O., drenagem) e **Cadastro completo**, sem perder dados de nenhum dos dois.
+
+- **Modelo**: os resultados laboratoriais não são colunas de `SoilProfile`. Cada `SoilSample` (talhão + data + profundidade + laboratório + laudo anexado) tem uma lista de `SoilMeasurement` com parâmetro, valor, unidade, método, origem (`manual` | `laudo` | `exemplo`) e conferência. Catálogo de parâmetros, unidades, conversões, faixas plausíveis e textos "por que informar" em `data/soilParameters.ts`.
+- **Validação** (`features/soil/model.ts`): unidade reconhecida antes de qualquer conversão (ex.: K 1 cmolc/dm³ = 391 mg/dm³), faixa plausível, método obrigatório para pH e P, profundidade coerente e checagens de consistência (granulometria ≈ 100%, CTC, V%, PMP < CC). Valores ausentes nunca são preenchidos.
+- **Laudo**: "Tenho uma análise de solo" permite digitar ou anexar PDF/imagem. O arquivo fica no IndexedDB deste navegador (`lib/fileStore.ts`). Ainda não há leitura automática: os valores são digitados, conferidos e confirmados. Só amostras **confirmadas** entram no motor.
+- **Motor**: `deriveSoilEvidence` usa a coleta confirmada mais recente: textura pela argila, pH em água (CaCl₂ + 0,6, aproximação), água disponível = (CC − PMP) × até 50 cm, m% da pior camada, V%. Cada valor guarda a origem (laudo / calculado / declarado) e a análise lista os dados que melhorariam a avaliação.
+- **Recálculo**: se a propriedade muda depois de uma análise, a comparação oferece "Recalcular com dados atuais" — cria uma nova análise e mantém a anterior.
+- **Histórico agrícola** (safra, cultura, produtividade, irrigação, adubação, calagem, cobertura): por enquanto só registro, não altera a comparação.
+
 ## Limites deliberados
 
 - Indicadores de rotação são **índices simulados** (0–100) gerados por regras explícitas em `features/rotations/engine.ts`, exibidas na própria tela. Não estimam produtividade nem são recomendação agronômica validada.

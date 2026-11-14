@@ -1,7 +1,14 @@
-import { useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, MapPinned, Search, WandSparkles } from "lucide-react";
 import { useAppStore } from "@/app/store";
+import { Segmented } from "@/components/ui/misc";
+import { deleteFile } from "@/lib/fileStore";
+import { deriveSoilEvidence } from "@/features/soil/model";
+import { SoilEvidenceSummary } from "@/features/soil/SoilEvidenceSummary";
+import { SoilSamplesSection } from "@/features/soil/SoilCompleteSection";
+import { CropHistorySection } from "@/features/soil/CropHistorySection";
+import type { CropHistoryEntry, SoilSample } from "@/types";
 import { EmptyState } from "@/components/shared";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -12,7 +19,10 @@ import { BRAZIL_STATES } from "@/data/sampleProperties";
 import { DRAINAGE_LABEL, SOIL_TEXTURE_LABEL } from "@/data/crops";
 import { polygonCenter } from "@/lib/geo";
 import type { Property } from "@/types";
-import { CIANORTE_EXAMPLE, EMPTY_FORM, toPropertyInput, validateProperty, type FormErrors, type PropertyFormValues } from "./validation";
+import { CIANORTE_EXAMPLE, EMPTY_FORM, soilFromValues, toPropertyInput, validateProperty, type FormErrors, type PropertyFormValues } from "./validation";
+
+const NEW_ID = "nova";
+type SoilMode = "simples" | "completo";
 
 const CIANORTE_CENTER: [number, number] = [-23.6599, -52.6054];
 
@@ -38,9 +48,25 @@ export function PropertyFormPage() {
   const existing = useAppStore((s) => s.properties.find((p) => p.id === id));
   const addProperty = useAppStore((s) => s.addProperty);
   const updateProperty = useAppStore((s) => s.updateProperty);
+  const setPropertySoilData = useAppStore((s) => s.setPropertySoilData);
   const isEdit = !!id;
+  const [params] = useSearchParams();
 
   const [values, setValues] = useState<PropertyFormValues>(() => (existing ? fromProperty(existing) : EMPTY_FORM));
+  // os dois níveis convivem no estado: alternar não apaga nada (RF-SOLO-01)
+  const [soilMode, setSoilMode] = useState<SoilMode>(() => (params.get("solo") === "completo" ? "completo" : (existing?.soilMode ?? "simples")));
+  const [samples, setSamples] = useState<SoilSample[]>(() => (id ? useAppStore.getState().soilSamples.filter((s) => s.propertyId === id) : []));
+  const [history, setHistory] = useState<CropHistoryEntry[]>(() => (id ? useAppStore.getState().cropHistory.filter((s) => s.propertyId === id) : []));
+  // laudos enviados nesta edição: se o cadastro for cancelado, saem do armazenamento local
+  const uploaded = useRef<string[]>([]);
+  const savedRef = useRef(false);
+  useEffect(
+    () => () => {
+      if (!savedRef.current) uploaded.current.forEach((f) => void deleteFile(f));
+    },
+    [],
+  );
+  const evidence = useMemo(() => deriveSoilEvidence({ id: id ?? NEW_ID, soil: soilFromValues(values) }, samples), [id, values, samples]);
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -103,14 +129,19 @@ export function PropertyFormPage() {
     }
     setSaving(true);
     await new Promise((r) => setTimeout(r, 300));
-    const input = toPropertyInput(values);
+    const input = { ...toPropertyInput(values), soilMode };
     if (isEdit && existing) {
+      setPropertySoilData(existing.id, samples, history);
       updateProperty(existing.id, input);
       toast.success("Propriedade atualizada", input.name);
     } else {
-      addProperty(input);
+      const p = addProperty(input);
+      setPropertySoilData(p.id, samples, history);
       toast.success("Propriedade cadastrada", `${input.name} · ${input.areaHa.toLocaleString("pt-BR")} ha`);
     }
+    savedRef.current = true;
+    const drafts = samples.filter((s) => s.status === "rascunho").length;
+    if (drafts) toast.info(`${drafts} análise(s) em rascunho`, "Confirme os valores para que entrem na avaliação.");
     setSaving(false);
     navigate("/propriedades");
   };
@@ -183,7 +214,23 @@ export function PropertyFormPage() {
           </div>
 
           <div className="h-px bg-border" />
-          <p className="text-sm font-semibold">Solo</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold">Solo</p>
+            <Segmented<SoilMode>
+              aria-label="Nível do cadastro de solo"
+              value={soilMode}
+              onChange={setSoilMode}
+              options={[
+                { value: "simples", label: "Cadastro simples" },
+                { value: "completo", label: "Cadastro completo" },
+              ]}
+            />
+          </div>
+          {soilMode === "completo" && (
+            <p className="-mt-2 text-xs text-muted-foreground">
+              Os campos abaixo continuam valendo como base; o laudo, logo abaixo do mapa, substitui o que medir.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Textura">
               {(p) => (
@@ -230,6 +277,36 @@ export function PropertyFormPage() {
           </div>
         </Card>
       </div>
+
+      {soilMode === "completo" ? (
+        <div className="mt-5 flex flex-col gap-5">
+          <Card className="p-5">
+            <h2 className="mb-3 text-lg font-semibold tracking-tight">O que a avaliação vai usar</h2>
+            <SoilEvidenceSummary evidence={evidence} />
+            <p className="mt-3 text-xs text-muted-foreground">
+              Mais dados tornam a avaliação mais específica, desde que sejam representativos da área. Isso não significa, por si só, maior precisão
+              estatística — essa melhoria depende de validação agronômica das regras.
+            </p>
+          </Card>
+          <Card className="p-5">
+            <SoilSamplesSection
+              propertyId={id ?? NEW_ID}
+              samples={samples}
+              onChange={setSamples}
+              onFileStored={(f) => uploaded.current.push(f)}
+            />
+          </Card>
+          <Card className="p-5">
+            <CropHistorySection propertyId={id ?? NEW_ID} entries={history} onChange={setHistory} />
+          </Card>
+        </div>
+      ) : (
+        (samples.length > 0 || history.length > 0) && (
+          <p className="mt-4 text-[13px] text-muted-foreground">
+            Esta propriedade tem {samples.length} análise(s) de solo e {history.length} safra(s) no histórico — continuam salvas; veja em “Cadastro completo”.
+          </p>
+        )
+      )}
     </form>
   );
 }

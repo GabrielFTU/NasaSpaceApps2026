@@ -35,6 +35,44 @@ export function polygonPerimeterM(points: [number, number][]): number {
   return d;
 }
 
+/** Ponto dentro do polígono (ray casting). Pontos [lat, lon]. */
+export function pointInPolygon(lat: number, lon: number, poly: [number, number][]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [yi, xi] = poly[i];
+    const [yj, xj] = poly[j];
+    if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+export function polygonBounds(points: [number, number][]) {
+  const lats = points.map((p) => p[0]);
+  const lons = points.map((p) => p[1]);
+  return { south: Math.min(...lats), north: Math.max(...lats), west: Math.min(...lons), east: Math.max(...lons) };
+}
+
+/** true quando duas arestas não adjacentes se cruzam (contorno "em oito"). */
+export function selfIntersects(points: [number, number][]): boolean {
+  const n = points.length;
+  if (n < 4) return false;
+  const cross = (a: [number, number], b: [number, number], c: [number, number]) => (b[1] - a[1]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[1] - a[1]);
+  const hit = (p1: [number, number], p2: [number, number], p3: [number, number], p4: [number, number]) => {
+    const d1 = cross(p3, p4, p1);
+    const d2 = cross(p3, p4, p2);
+    const d3 = cross(p1, p2, p3);
+    const d4 = cross(p1, p2, p4);
+    return d1 * d2 < 0 && d3 * d4 < 0;
+  };
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue; // arestas adjacentes pelo fechamento
+      if (hit(points[i], points[(i + 1) % n], points[j], points[(j + 1) % n])) return true;
+    }
+  }
+  return false;
+}
+
 /** Retângulo de exemplo ao redor de um ponto (largura/altura em metros). */
 export function rectAround(lat: number, lon: number, wM: number, hM: number): [number, number][] {
   const dLat = hM / 2 / 111320;

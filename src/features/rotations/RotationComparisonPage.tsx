@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ChevronDown, FileSearch, FlaskConical, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, FileSearch, FlaskConical, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Callout } from "@/components/ui/misc";
+import { runAnalysis } from "@/features/analysis/runAnalysis";
+import { LEVEL_LABEL } from "@/features/soil/model";
+import { SoilEvidenceSummary } from "@/features/soil/SoilEvidenceSummary";
 import { useAppStore } from "@/app/store";
 import { EmptyState, KeyValue, DataOriginBadge } from "@/components/shared";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -19,8 +23,15 @@ export function RotationComparisonPage() {
   const { id } = useParams();
   const analysis = useAppStore((s) => s.analyses.find((a) => a.id === id));
   const deleteAnalysis = useAppStore((s) => s.deleteAnalysis);
+  const saveAnalysis = useAppStore((s) => s.saveAnalysis);
+  const property = useAppStore((s) => s.properties.find((p) => p.id === analysis?.propertyId));
+  const soilSamples = useAppStore((s) => s.soilSamples);
+  const powerMode = useAppStore((s) => s.settings.powerMode);
+  const original = useAppStore((s) => s.analyses.find((a) => a.id === analysis?.recalculatedFrom));
   const navigate = useNavigate();
   const [confirm, setConfirm] = useState(false);
+  const [showSoil, setShowSoil] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
   const [showParams, setShowParams] = useState(false);
   const [showMethod, setShowMethod] = useState(false);
   const [showZarc, setShowZarc] = useState(false);
@@ -45,6 +56,32 @@ export function RotationComparisonPage() {
   const maxW = Math.max(...Object.values(input.priorities));
   const top = (Object.keys(input.priorities) as PriorityKey[]).filter((k) => input.priorities[k] === maxW && maxW > 0);
   const usedCrops = [...new Set(scenarios.flatMap((s) => s.sequence))].filter((c) => CROP_MAP[c]);
+  // dados da propriedade (inclusive solo e laudos, salvos junto) mudaram depois desta análise
+  const stale = !!property && property.updatedAt > analysis.createdAt;
+
+  /** RF-SOLO-08: nova análise com os dados atuais; esta continua no histórico. */
+  const recalculate = async () => {
+    if (!property) return;
+    setRecalculating(true);
+    try {
+      const fresh = await runAnalysis({
+        property,
+        samples: soilSamples,
+        currentRotation: input.currentRotation,
+        interestCropIds: input.interestCropIds,
+        priorities: input.priorities,
+        powerMode,
+        recalculatedFrom: analysis.id,
+      });
+      saveAnalysis(fresh);
+      toast.success("Análise recalculada", "A versão anterior continua nas estratégias salvas.");
+      navigate(`/analise/${fresh.id}`);
+    } catch (e) {
+      toast.error("Não foi possível recalcular", e instanceof Error ? e.message : undefined);
+    } finally {
+      setRecalculating(false);
+    }
+  };
 
   return (
     <>
@@ -67,6 +104,30 @@ export function RotationComparisonPage() {
           </Link>
         </div>
       </div>
+
+      {stale && (
+        <Callout tone="info" icon={<RefreshCw />} className="mb-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <span>Os dados desta propriedade (incluindo solo e laudos) foram atualizados depois desta análise.</span>
+            <Button size="sm" onClick={recalculate} loading={recalculating} className="shrink-0">
+              {!recalculating && <RefreshCw />} Recalcular com dados atuais
+            </Button>
+          </div>
+        </Callout>
+      )}
+      {analysis.recalculatedFrom && (
+        <p className="mb-3 text-[13px] text-muted-foreground">
+          Recálculo de{" "}
+          {original ? (
+            <Link to={`/analise/${original.id}`} className="font-medium text-primary hover:underline">
+              análise de {formatDateTime(original.createdAt)}
+            </Link>
+          ) : (
+            "uma análise anterior (excluída)"
+          )}{" "}
+          com dados de solo atualizados.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
         {scenarios.map((s) => (
@@ -101,6 +162,17 @@ export function RotationComparisonPage() {
             Clima observado de {formatDate(climate.periodStart)} a {formatDate(climate.periodEnd)} (NASA POWER). Verão = out–mar; inverno = abr–set. Não é previsão.
           </p>
         </Collapsible>
+
+        {input.soilEvidence && (
+          <Collapsible
+            title="Solo considerado"
+            open={showSoil}
+            onToggle={() => setShowSoil((v) => !v)}
+            aside={<span className="hidden text-xs text-muted-foreground sm:inline">{LEVEL_LABEL[input.soilEvidence.level].title}</span>}
+          >
+            <SoilEvidenceSummary evidence={input.soilEvidence} propertyId={property ? analysis.propertyId : undefined} />
+          </Collapsible>
+        )}
 
         {analysis.zarc && (
           <Collapsible

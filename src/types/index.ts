@@ -25,12 +25,159 @@ export interface Property {
   /** Contorno desenhado no mapa: lista de [lat, lon]. Quando existe, a área é calculada a partir dele. */
   boundary?: [number, number][];
   areaHa: number;
+  /** Perfil declarado (cadastro simples). Continua existindo no cadastro completo, como base e fallback. */
   soil: SoilProfile;
+  /** Nível de cadastro exibido no formulário. Alternar não apaga dados de nenhum dos dois níveis (RF-SOLO-01). */
+  soilMode?: "simples" | "completo";
   createdAt: string;
   updatedAt: string;
 }
 
+/* ---------- Análises laboratoriais de solo (cadastro completo) ---------- */
+
+/** Parâmetros laboratoriais suportados — ver catálogo em src/data/soilParameters.ts. */
+export type SoilParamKey =
+  | "areia"
+  | "silte"
+  | "argila"
+  | "densidade"
+  | "profundidade_efetiva"
+  | "resistencia_penetracao"
+  | "cc"
+  | "pmp"
+  | "infiltracao"
+  | "ph"
+  | "materia_organica"
+  | "p"
+  | "k"
+  | "ca"
+  | "mg"
+  | "al"
+  | "h_al"
+  | "ctc"
+  | "v"
+  | "m"
+  | "s"
+  | "b"
+  | "cu"
+  | "fe"
+  | "mn"
+  | "zn"
+  | "ce";
+
+/** De onde veio o valor (RF-SOLO-06). "exemplo" = valor ilustrativo da interface, nunca de um laudo. */
+export type MeasurementOrigin = "manual" | "laudo" | "exemplo";
+
+/** Um resultado laboratorial: sempre com a unidade e o método em que foi informado (RF-SOLO-05). */
+export interface SoilMeasurement {
+  parameter: SoilParamKey;
+  value: number;
+  unit: string;
+  method?: string;
+  origin: MeasurementOrigin;
+  /** Conferido pelo usuário contra o laudo (RF-SOLO-06/07). */
+  verified: boolean;
+}
+
+export interface SoilAttachment {
+  /** Chave do arquivo no IndexedDB do navegador (src/lib/fileStore.ts). */
+  fileId: string;
+  name: string;
+  type: string;
+  size: number;
+}
+
+/** Uma amostra de solo: talhão + data + profundidade (RF-SOLO-04). */
+export interface SoilSample {
+  id: string;
+  propertyId: string;
+  plot: string;
+  date: string | null; // YYYY-MM-DD
+  lab: string;
+  depthTopCm: number | null;
+  depthBottomCm: number | null;
+  measurements: SoilMeasurement[];
+  attachment?: SoilAttachment;
+  /** Só amostras confirmadas entram no motor de comparação (RF-SOLO-07). */
+  status: "rascunho" | "confirmada";
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type YieldUnit = "sc/ha" | "kg/ha" | "t/ha";
+
+/** Histórico agrícola da propriedade (cadastro completo). */
+export interface CropHistoryEntry {
+  id: string;
+  propertyId: string;
+  plot: string;
+  safra: string; // "2025/2026"
+  season: Season;
+  cropId: string;
+  yieldValue: number | null;
+  yieldUnit: YieldUnit;
+  irrigated: boolean;
+  fertilization: string;
+  /** Calcário aplicado (t/ha); null = não informado. */
+  limingTHa: number | null;
+  coverAfter: string;
+}
+
+/** Valor efetivamente usado pelo motor, com rastreabilidade da origem. */
+export interface SoilEvidenceValue {
+  value: number;
+  unit: string;
+  /** medido = do laudo; estimado = convertido/calculado a partir do laudo; declarado = cadastro simples. */
+  source: "medido" | "estimado" | "declarado";
+  note?: string;
+}
+
+export type SoilDetailLevel = "basico" | "intermediario" | "detalhado";
+
+/** O que o motor sabe sobre o solo e de onde veio cada informação. */
+export interface SoilEvidence {
+  level: SoilDetailLevel;
+  sample?: { id: string; plot: string; date: string | null; lab: string; depth: string; illustrative: boolean; layers: number };
+  texture: { value: SoilTexture; source: "medido" | "declarado"; note?: string };
+  phWater?: SoilEvidenceValue;
+  organicMatter?: SoilEvidenceValue;
+  effectiveDepthCm?: SoilEvidenceValue;
+  availableWaterMm?: SoilEvidenceValue;
+  baseSaturation?: SoilEvidenceValue;
+  /** Maior saturação por alumínio entre as camadas da amostra. */
+  aluminumSaturation?: SoilEvidenceValue & { depth: string };
+  /** Dados que melhorariam a avaliação (RF-SOLO-09). */
+  missing: { parameter: SoilParamKey; why: string; criteria: PriorityKey[] }[];
+}
+
 export type PropertyInput = Omit<Property, "id" | "createdAt" | "updatedAt">;
+
+/* ---------- Talhões (Mapa Ambiental) ---------- */
+
+/**
+ * Talhão: subdivisão da propriedade com geometria própria.
+ * Geometria em WGS84 (EPSG:4326), anel externo sem repetir o primeiro vértice, pontos [lat, lon].
+ * Na exportação/integração (GeoJSON, PostGIS) a ordem vira [lon, lat] — ver src/lib/geojson.ts.
+ */
+export interface Plot {
+  id: string;
+  propertyId: string;
+  name: string;
+  boundary: [number, number][];
+  areaHa: number;
+  /** Cultura atual informada pelo usuário (texto livre). */
+  currentCrop?: string;
+  /** Textura informada para o talhão; ausente = usa a declarada para a propriedade. */
+  soilTexture?: SoilTexture;
+  notes?: string;
+  /** true = talhão de exemplo criado pelo Semeia (não é cadastro do usuário). */
+  demo?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PlotInput = Omit<Plot, "id" | "createdAt" | "updatedAt">;
 
 /* ---------- Dados ambientais ---------- */
 
@@ -223,6 +370,8 @@ export interface AnalysisInput {
   currentRotation: { verao: string; inverno: string }; // ids de cultura ou "pousio"
   interestCropIds: string[];
   soil: SoilProfile;
+  /** Ausente em análises anteriores ao cadastro completo de solo. */
+  soilEvidence?: SoilEvidence;
   priorities: Priorities;
 }
 
@@ -281,6 +430,8 @@ export interface Analysis {
   zarc?: ZarcResult;
   scenarios: ScenarioResult[];
   engineVersion: string;
+  /** Análise da qual esta é um recálculo com dados de solo atualizados (RF-SOLO-08). */
+  recalculatedFrom?: string;
 }
 
 /* ---------- Configurações ---------- */

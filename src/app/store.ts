@@ -1,8 +1,10 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { Analysis, Property, PropertyInput, Settings } from "@/types";
+import type { Analysis, CropHistoryEntry, Plot, PlotInput, Property, PropertyInput, Settings, SoilSample } from "@/types";
 import { SAMPLE_PROPERTIES } from "@/data/sampleProperties";
+import { SAMPLE_PLOTS } from "@/data/samplePlots";
 import { uid } from "@/lib/utils";
+import { deleteFile } from "@/lib/fileStore";
 
 /**
  * Estado da aplicação com persistência local (localStorage).
@@ -22,10 +24,21 @@ export const DEFAULT_SETTINGS: Settings = {
 interface AppState {
   properties: Property[];
   analyses: Analysis[];
+  /** Amostras de solo (cadastro completo), uma entidade por talhão + data + profundidade. */
+  soilSamples: SoilSample[];
+  cropHistory: CropHistoryEntry[];
+  /** Talhões desenhados no Mapa Ambiental. */
+  plots: Plot[];
   selectedPropertyId: string | null;
   settings: Settings;
 
+  addPlot: (input: PlotInput) => Plot;
+  updatePlot: (id: string, patch: Partial<PlotInput>) => void;
+  deletePlot: (id: string) => void;
+
   addProperty: (input: PropertyInput) => Property;
+  /** Substitui amostras e histórico de uma propriedade (salvos junto com o formulário). */
+  setPropertySoilData: (propertyId: string, samples: SoilSample[], history: CropHistoryEntry[]) => void;
   updateProperty: (id: string, input: PropertyInput) => void;
   deleteProperty: (id: string) => void;
   selectProperty: (id: string) => void;
@@ -42,8 +55,34 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       properties: SAMPLE_PROPERTIES,
       analyses: [],
+      soilSamples: [],
+      cropHistory: [],
+      plots: SAMPLE_PLOTS,
       selectedPropertyId: SAMPLE_PROPERTIES[0].id,
       settings: DEFAULT_SETTINGS,
+
+      addPlot: (input) => {
+        const now = new Date().toISOString();
+        const p: Plot = { ...input, id: uid("plot"), createdAt: now, updatedAt: now };
+        set((s) => ({ plots: [...s.plots, p] }));
+        return p;
+      },
+      updatePlot: (id, patch) =>
+        set((s) => ({ plots: s.plots.map((p) => (p.id === id ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p)) })),
+      deletePlot: (id) => set((s) => ({ plots: s.plots.filter((p) => p.id !== id) })),
+
+      setPropertySoilData: (propertyId, samples, history) =>
+        set((s) => {
+          // apaga do armazenamento local os laudos que deixaram de ser referenciados
+          const kept = new Set(samples.map((x) => x.attachment?.fileId).filter(Boolean));
+          s.soilSamples
+            .filter((x) => x.propertyId === propertyId && x.attachment && !kept.has(x.attachment.fileId))
+            .forEach((x) => void deleteFile(x.attachment!.fileId));
+          return {
+            soilSamples: [...s.soilSamples.filter((x) => x.propertyId !== propertyId), ...samples.map((x) => ({ ...x, propertyId }))],
+            cropHistory: [...s.cropHistory.filter((x) => x.propertyId !== propertyId), ...history.map((x) => ({ ...x, propertyId }))],
+          };
+        }),
 
       addProperty: (input) => {
         const now = new Date().toISOString();
@@ -59,7 +98,14 @@ export const useAppStore = create<AppState>()(
         set((s) => {
           const properties = s.properties.filter((p) => p.id !== id);
           const selectedPropertyId = s.selectedPropertyId === id ? (properties[0]?.id ?? null) : s.selectedPropertyId;
-          return { properties, selectedPropertyId };
+          s.soilSamples.filter((x) => x.propertyId === id && x.attachment).forEach((x) => void deleteFile(x.attachment!.fileId));
+          return {
+            properties,
+            selectedPropertyId,
+            soilSamples: s.soilSamples.filter((x) => x.propertyId !== id),
+            cropHistory: s.cropHistory.filter((x) => x.propertyId !== id),
+            plots: s.plots.filter((x) => x.propertyId !== id),
+          };
         }),
       selectProperty: (id) => set({ selectedPropertyId: id }),
 
@@ -69,9 +115,13 @@ export const useAppStore = create<AppState>()(
       updateSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
       resetDemo: () => {
         const keepProfile = get().settings.profile;
+        get().soilSamples.forEach((x) => x.attachment && void deleteFile(x.attachment.fileId));
         set({
           properties: SAMPLE_PROPERTIES,
           analyses: [],
+          soilSamples: [],
+          cropHistory: [],
+          plots: SAMPLE_PLOTS,
           selectedPropertyId: SAMPLE_PROPERTIES[0].id,
           settings: { ...DEFAULT_SETTINGS, profile: keepProfile },
         });
@@ -79,10 +129,17 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: "semeia:v1",
-      version: 3,
+      version: 5,
       // v3: dados reais da NASA por padrão (POWER + SMAP + MODIS); propriedades de exemplo com contorno
+      // v4: cadastro completo de solo (amostras laboratoriais + histórico agrícola)
+      // v5: talhões do Mapa Ambiental (exemplos só para as propriedades de exemplo ainda existentes)
       migrate: (persisted, version) => {
-        const s = persisted as Partial<AppState>;
+        let s = persisted as Partial<AppState>;
+        if (version < 4) s = { ...s, soilSamples: s.soilSamples ?? [], cropHistory: s.cropHistory ?? [] };
+        if (version < 5) {
+          const ids = new Set((s.properties ?? SAMPLE_PROPERTIES).map((p) => p.id));
+          s = { ...s, plots: s.plots ?? SAMPLE_PLOTS.filter((p) => ids.has(p.propertyId)) };
+        }
         if (version < 3) {
           const old = (s.settings ?? {}) as Partial<Settings> & { smapEnabled?: boolean; ndviEnabled?: boolean };
           return {
