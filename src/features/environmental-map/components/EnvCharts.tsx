@@ -9,7 +9,7 @@ import type { TerrainStats } from "@/services/environment/terrain";
 const n = (v: number | null | undefined, f = fmt.n1) => (v === null || v === undefined ? "—" : f(v));
 const axis = { tick: CHART.tick, tickLine: false, axisLine: { stroke: CHART.axis } } as const;
 const dot = { r: 4, strokeWidth: 2, stroke: "#fdfdfb" };
-const H = "h-[180px] lg:h-full min-h-[160px]";
+const H = "h-[180px] lg:h-full min-h-[120px]";
 
 function inPeriod<T extends { date: string }>(rs: T[], start: string, end: string) {
   return rs.filter((r) => r.date >= start && r.date <= end);
@@ -33,8 +33,8 @@ export function RainTempChart({ series, start, end, granularity }: { series: Cli
           { color: CHART.series[1], label: "Mín–máx", kind: "band" },
         ]}
       />
-      <div className="grid min-h-0 flex-1 grid-rows-2 gap-1">
-        <div className="min-h-[90px]">
+      <div className="grid min-h-[180px] flex-1 grid-rows-2 gap-1 lg:min-h-0">
+        <div className="min-h-[60px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} syncId="clima" margin={{ top: 6, right: 8, left: -8, bottom: 0 }}>
               <CartesianGrid vertical={false} stroke={CHART.grid} />
@@ -45,7 +45,7 @@ export function RainTempChart({ series, start, end, granularity }: { series: Cli
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="min-h-[90px]">
+        <div className="min-h-[60px]">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={data} syncId="clima" margin={{ top: 6, right: 8, left: -8, bottom: 0 }}>
               <CartesianGrid vertical={false} stroke={CHART.grid} />
@@ -110,7 +110,7 @@ export function SoilMoistureChart({ result }: { result: Extract<SoilMoistureResu
           { color: CHART.series[3], label: "Zona das raízes 0–100 cm" },
         ]}
       />
-      <div className="min-h-[150px] flex-1">
+      <div className="min-h-[150px] flex-1 lg:min-h-0">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={result.records} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke={CHART.grid} />

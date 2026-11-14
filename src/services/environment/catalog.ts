@@ -13,6 +13,8 @@
  *  - Camadas "planned" ainda não têm integração e aparecem como indisponíveis.
  */
 
+import type { UnitConversion } from "./colormap";
+
 export type LayerGroup = "clima" | "agua" | "vegetacao" | "relevo" | "solo";
 
 export type LayerId = "precip" | "smap_surface" | "smap_root" | "temp" | "rh" | "ndvi" | "elevation" | "slope" | "soil" | "pedology" | "ndvi_hls";
@@ -27,6 +29,16 @@ export type LayerRender =
       /** TileMatrixSet usado na consulta de datas disponíveis (DescribeDomains). */
       tms: string;
       legendUrl: string;
+      /**
+       * Quando a legenda oficial usa unidade inadequada, o app desenha a régua a partir da
+       * paleta oficial (`colormap`) convertendo a unidade. As cores do mapa não mudam.
+       */
+      legendFrom?: { colormap: string; conversion: UnitConversion };
+      /**
+       * Leitura do valor sob o mouse: pixel da imagem GIBS convertido pela paleta oficial.
+       * `halfDeg` = meia-janela consultada (≈ resolução do produto).
+       */
+      probe?: { colormap: string; conversion?: UnitConversion; unit: string; decimals: number; halfDeg: number; precision: string };
     }
   | { kind: "computed"; method: "slope" }
   | { kind: "user"; method: "soil" }
@@ -128,7 +140,22 @@ export const LAYERS: EnvLayer[] = [
     temporal: "monthly",
     temporalLabel: "Mensal",
     latency: "≈ 1–3 meses",
-    render: { kind: "gibs", layer: "MERRA2_2m_Air_Temperature_Monthly", tms: "2km", legendUrl: `${GIBS_LEGEND}/MERRA2_2m_Air_Temperature_Monthly_H.png` },
+    render: {
+      kind: "gibs",
+      layer: "MERRA2_2m_Air_Temperature_Monthly",
+      tms: "2km",
+      legendUrl: `${GIBS_LEGEND}/MERRA2_2m_Air_Temperature_Monthly_H.png`,
+      // a paleta oficial é em Kelvin; a legenda do app mostra °C (K − 273,15)
+      legendFrom: { colormap: "MERRA2_2m_Air_Temperature_Monthly", conversion: { from: "K", to: "°C" } },
+      probe: {
+        colormap: "MERRA2_2m_Air_Temperature_Monthly",
+        conversion: { from: "K", to: "°C" },
+        unit: "°C",
+        decimals: 0,
+        halfDeg: 0.05,
+        precision: "±0,5 °C (faixas de 1 K da paleta)",
+      },
+    },
     defaultOpacity: 0.6,
     z: 20,
     limitations:

@@ -59,6 +59,9 @@ export async function fetchPowerApi(lat: number, lon: number, start: string, end
     }));
 
   const lastWithData = [...records].reverse().find((r) => r.t2m !== null || r.precip !== null);
+  // resposta "vazia" (só valores de preenchimento −999): tratar como falha — não guardar em cache
+  // nem desenhar gráfico vazio. withFallback() decide o que mostrar, sempre identificado.
+  if (!lastWithData) throw new PowerApiError("A NASA POWER respondeu, mas sem valores para este local e período.");
 
   return {
     origin: "real",

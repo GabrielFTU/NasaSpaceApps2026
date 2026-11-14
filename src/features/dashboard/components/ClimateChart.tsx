@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Table2, LineChart as LineIcon } from "lucide-react";
+import { CircleSlash, Table2, LineChart as LineIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/misc";
@@ -26,6 +26,9 @@ export function ClimateChart({ data, granularity }: { data: ChartPoint[]; granul
   const tickFmt = granularity === "daily" ? formatShortDay : formatMonth;
   const titleFmt = (k: string) => (granularity === "daily" ? formatDate(k) : formatMonth(k));
   const precipLabel = granularity === "monthly" ? "Total mensal" : "Diária";
+  // nunca desenhar eixos vazios em silêncio: sem nenhum valor da variável, mostra o motivo
+  const pick: Record<Variable, (p: ChartPoint) => unknown> = { temp: (p) => p.t2m, precip: (p) => p.precip, rh: (p) => p.rh, radiation: (p) => p.radiation };
+  const hasValues = data.some((p) => pick[variable](p) !== null && pick[variable](p) !== undefined);
 
   return (
     <Card>
@@ -65,7 +68,15 @@ export function ClimateChart({ data, granularity }: { data: ChartPoint[]; granul
             />
           </div>
         )}
-        {view === "chart" ? (
+        {view === "chart" && !hasValues ? (
+          <div className="flex h-72 w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-input px-4 text-center text-sm text-muted-foreground">
+            <CircleSlash className="size-5" />
+            <p>
+              Sem valores de <strong>{meta.label.toLowerCase()}</strong> neste período.
+            </p>
+            <p className="text-xs">A fonte não publicou dados para estes dias. Tente outro período ou use o botão de atualizar.</p>
+          </div>
+        ) : view === "chart" ? (
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={data} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>

@@ -1,5 +1,7 @@
-import { memo, useEffect, useMemo, useRef } from "react";
-import { CircleMarker, MapContainer, Marker, Polygon, Polyline, Tooltip, useMap, useMapEvents, WMSTileLayer } from "react-leaflet";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { formatDate } from "@/lib/format";
+import { probeValue } from "@/services/environment/probe";
+import { CircleMarker, MapContainer, Marker, Polygon, Polyline, Tooltip, useMap, useMapEvents, WMSTileLayer, ZoomControl } from "react-leaflet";
 import L from "leaflet";
 import type { Plot, Property } from "@/types";
 import { BaseTiles, MAX_ZOOM, type BaseLayer } from "@/components/maps";
@@ -37,12 +39,17 @@ export const MapView = memo(function MapView(props: MapViewProps) {
   const { base, property, plots, selectedPlotId, onSelectPlot, rasters, soilOpacity, draw, focus } = props;
   const drawing = !!draw;
   return (
-    <MapContainer maxZoom={MAX_ZOOM} center={focus.center} zoom={15} className="envmap isolate h-full w-full !rounded-none" zoomControl>
+    <MapContainer maxZoom={MAX_ZOOM} center={focus.center} zoom={15} className="envmap isolate h-full w-full !rounded-none" zoomControl={false}>
+      <ZoomControl position="bottomright" />
       <BaseTiles layer={base} labels={base === "satelite"} />
       <Fit focus={focus} />
       <AutoResize />
       <DrawMode active={drawing} />
       {props.onZoom && <ZoomWatcher onZoom={props.onZoom} />}
+      {!drawing &&
+        rasters.map(({ layer, date }) =>
+          layer.render.kind === "gibs" && layer.render.probe && date ? <HoverProbe key={`probe-${layer.id}`} layer={layer} date={date} /> : null,
+        )}
 
       {rasters.map(({ layer, opacity, date }) => {
         if (layer.render.kind === "computed") return <SlopeLayer key={layer.id} opacity={opacity} zIndex={layer.z} />;
@@ -169,6 +176,75 @@ function AutoResize() {
     return () => ro.disconnect();
   }, [map]);
   return null;
+}
+
+/**
+ * Valor da camada sob o mouse (ou toque). Espera o mouse parar ~250 ms antes de consultar a NASA
+ * e descarta respostas de posições antigas.
+ */
+function HoverProbe({ layer, date }: { layer: EnvLayer; date: string }) {
+  const [tip, setTip] = useState<{ x: number; y: number; lat: number; lon: number; value?: number | null; loading: boolean; error?: boolean } | null>(null);
+  const timer = useRef<number | undefined>(undefined);
+  const seq = useRef(0);
+  const render = layer.render.kind === "gibs" ? layer.render : null;
+  const probe = render?.probe;
+
+  const query = (lat: number, lon: number, x: number, y: number) => {
+    if (!render || !probe) return;
+    const id = ++seq.current;
+    setTip({ x, y, lat, lon, loading: true });
+    probeValue({ layer: render.layer, colormap: probe.colormap, conversion: probe.conversion, date, lat, lon, halfDeg: probe.halfDeg })
+      .then((value) => id === seq.current && setTip((t) => (t ? { ...t, value, loading: false } : t)))
+      .catch(() => id === seq.current && setTip((t) => (t ? { ...t, loading: false, error: true } : t)));
+  };
+
+  useMapEvents({
+    mousemove: (e) => {
+      const { x, y } = e.containerPoint;
+      setTip((t) => (t ? { ...t, x, y } : t));
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => query(e.latlng.lat, e.latlng.lng, x, y), 250);
+    },
+    // toque em celular: mostra o valor do ponto tocado
+    click: (e) => query(e.latlng.lat, e.latlng.lng, e.containerPoint.x, e.containerPoint.y),
+    mouseout: () => {
+      window.clearTimeout(timer.current);
+      seq.current++;
+      setTip(null);
+    },
+    movestart: () => setTip(null),
+  });
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => setTip(null), [date]);
+
+  if (!tip || !probe) return null;
+  const monthly = layer.temporal === "monthly";
+  const when = monthly ? formatDate(date, { month: "long", year: "numeric" }) : formatDate(date);
+  return (
+    <div
+      className="pointer-events-none absolute z-[700] w-max max-w-60 rounded-md border border-border bg-surface/95 px-2.5 py-1.5 text-xs shadow-md backdrop-blur"
+      style={{ left: tip.x, top: tip.y - 14, transform: "translate(-50%, -100%)" }}
+      role="status"
+    >
+      {tip.loading ? (
+        <span className="text-muted-foreground">Lendo {layer.short.toLowerCase()}…</span>
+      ) : tip.error ? (
+        <span className="text-danger">Não foi possível consultar agora.</span>
+      ) : tip.value === null || tip.value === undefined ? (
+        <span className="text-muted-foreground">Sem dado neste ponto.</span>
+      ) : (
+        <>
+          <p className="tabular text-base font-semibold leading-tight">
+            ≈ {tip.value.toLocaleString("pt-BR", { maximumFractionDigits: probe.decimals })} {probe.unit}
+          </p>
+          <p className="text-muted-foreground">
+            {monthly ? "Média de " : ""}
+            {when} · área de {layer.spatialResolution.split(" (")[1]?.replace(")", "") ?? layer.spatialResolution}
+          </p>
+        </>
+      )}
+    </div>
+  );
 }
 
 function ZoomWatcher({ onZoom }: { onZoom: (z: number) => void }) {
