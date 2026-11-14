@@ -22,10 +22,11 @@ function sampleDates(end: string, days: number, step: number): string[] {
  * manter ~45 consultas. Dias sem produto publicado retornam null.
  */
 export async function fetchSmapReal(lat: number, lon: number, end: string, days = 60): Promise<SoilMoistureResult> {
-  const step = Math.max(2, Math.ceil(days / 45));
+  // no máximo ~32 datas (64 requisições pequenas) por período
+  const step = Math.max(2, Math.ceil(days / 32));
   const dates = sampleDates(end, days, step);
   const common = { colormap: SMAP_SOURCE.colormap, lat, lon, halfDeg: 0.05 };
-  const records: DailySoilMoisture[] = await mapLimit(dates, 6, async (date) => {
+  const records: DailySoilMoisture[] = await mapLimit(dates, 8, async (date) => {
     const [surface, rootZone] = await Promise.all([
       samplePoint({ ...common, layer: SMAP_SOURCE.layers.surface, date }).catch(() => null),
       samplePoint({ ...common, layer: SMAP_SOURCE.layers.rootZone, date }).catch(() => null),

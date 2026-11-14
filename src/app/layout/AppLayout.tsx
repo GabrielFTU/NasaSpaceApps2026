@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Bell, ChevronDown, CloudSun, History, Home, Map as MapIcon, Menu, Settings, Sprout, X, Database, BellOff } from "lucide-react";
+import { Bell, ChevronDown, CloudSun, History, Home, Map as MapIcon, Menu, Settings, Sprout, X, Database, BellOff, Layers } from "lucide-react";
 import { Logo, NasaMark } from "@/components/shared";
 import { Toaster } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { to: "/", label: "Início", icon: Home, end: true },
   { to: "/propriedades", label: "Propriedades", icon: MapIcon },
+  { to: "/mapa", label: "Mapa ambiental", icon: Layers },
   { to: "/clima", label: "Clima e alertas", icon: CloudSun },
   { to: "/analise", label: "Nova análise", icon: Sprout },
   { to: "/historico", label: "Estratégias salvas", icon: History },
@@ -27,6 +28,7 @@ const TITLES: [RegExp, string][] = [
   [/^\/propriedades\/nova/, "Nova propriedade"],
   [/^\/propriedades\/.+\/editar/, "Editar propriedade"],
   [/^\/propriedades/, "Propriedades"],
+  [/^\/mapa/, "Mapa ambiental"],
   [/^\/clima/, "Clima e alertas"],
   [/^\/analise\/.+/, "Comparativo de rotações"],
   [/^\/analise/, "Nova análise"],
@@ -170,6 +172,7 @@ export function AppLayout() {
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const title = TITLES.find(([re]) => re.test(location.pathname))?.[1] ?? "Semeia";
+  const fullBleed = location.pathname.startsWith("/mapa");
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -213,7 +216,8 @@ export function AppLayout() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8">
+      {/* telas de mapa ocupam toda a área útil, sem margens nem largura máxima */}
+      <main className={fullBleed ? "w-full lg:h-[calc(100dvh-4rem)]" : "mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8"}>
         <Outlet />
       </main>
       <Toaster />

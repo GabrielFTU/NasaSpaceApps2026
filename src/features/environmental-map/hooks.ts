@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ClimateSeries, SoilMoistureResult, VegetationResult } from "@/types";
 import { useAppStore } from "@/app/store";
 import { browserEnvironmentProvider as provider } from "@/services/environment/provider";
@@ -7,7 +7,15 @@ import { getAvailableDates, searchWindow, snapDate, type SnappedDate } from "@/s
 import type { EnvLayer } from "@/services/environment/catalog";
 import type { Period } from "./period";
 
-export type Load<T> = { status: "idle" } | { status: "loading" } | { status: "error"; error: string } | { status: "ready"; data: T };
+/**
+ * `stale: true` = o valor exibido é da consulta anterior e uma nova está a caminho.
+ * A interface mostra esse valor esmaecido com "Atualizando…" em vez de esvaziar a tela.
+ */
+export type Load<T> =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "error"; error: string }
+  | { status: "ready"; data: T; stale?: boolean };
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : "Erro desconhecido.");
 
@@ -16,7 +24,7 @@ function useLoad<T>(enabled: boolean, deps: unknown[], loader: () => Promise<T>)
   useEffect(() => {
     if (!enabled) return setState({ status: "idle" });
     let alive = true;
-    setState({ status: "loading" });
+    setState((prev) => (prev.status === "ready" ? { ...prev, stale: true } : { status: "loading" }));
     loader()
       .then((data) => alive && setState({ status: "ready", data }))
       .catch((e) => alive && setState({ status: "error", error: msg(e) }));
@@ -51,7 +59,8 @@ export function useAreaEnvironment(target: AreaTarget | null, period: Period) {
   const terrain = useLoad<TerrainStats>(!!target?.boundary && target.boundary.length >= 3, [boundaryKey], () =>
     provider.getTerrain(target!.boundary!),
   );
-  return { climate, soil, vegetation, terrain, mode };
+  // objeto estável: componentes memoizados só re-renderizam quando algum dado muda
+  return useMemo(() => ({ climate, soil, vegetation, terrain, mode }), [climate, soil, vegetation, terrain, mode]);
 }
 
 /** Data efetivamente exibida para cada camada temporal ativa do GIBS. */
@@ -65,7 +74,11 @@ export function useLayerDates(layers: EnvLayer[], requested: string) {
       if (l.render.kind !== "gibs" || l.temporal === "static") continue;
       const { layer, tms } = l.render;
       const w = searchWindow(requested, l.temporal);
-      setDates((d) => ({ ...d, [l.id]: { status: "loading" } }));
+      // mantém a imagem atual no mapa enquanto consulta (evita remover/recriar a camada)
+      setDates((d) => {
+        const prev = d[l.id];
+        return { ...d, [l.id]: prev?.status === "ready" ? { ...prev, stale: true } : { status: "loading" } };
+      });
       getAvailableDates(layer, tms, w.start, w.end)
         .then((av) => alive && setDates((d) => ({ ...d, [l.id]: { status: "ready", data: snapDate(av, requested) } })))
         .catch((e) => alive && setDates((d) => ({ ...d, [l.id]: { status: "error", error: msg(e) } })));

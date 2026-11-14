@@ -8,6 +8,7 @@ import { AnalysisWizardPage } from "@/features/analysis/AnalysisWizardPage";
 import { RotationComparisonPage } from "@/features/rotations/RotationComparisonPage";
 import { HistoryPage } from "@/features/history/HistoryPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { EnvironmentalMapPage } from "@/features/environmental-map/EnvironmentalMapPage";
 import { EmptyState } from "@/components/shared";
 import { buttonVariants } from "@/components/ui/button";
 import { Compass } from "lucide-react";
@@ -33,6 +34,7 @@ const router = createBrowserRouter([
     children: [
       { path: "/", element: <DashboardPage /> },
       { path: "/clima", element: <ClimatePage /> },
+      { path: "/mapa", element: <EnvironmentalMapPage /> },
       { path: "/propriedades", element: <PropertiesPage /> },
       { path: "/propriedades/nova", element: <PropertyFormPage /> },
       { path: "/propriedades/:id/editar", element: <PropertyFormPage /> },

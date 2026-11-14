@@ -68,6 +68,16 @@ O formulário da propriedade alterna entre **Cadastro simples** (textura declara
 - **Recálculo**: se a propriedade muda depois de uma análise, a comparação oferece "Recalcular com dados atuais" — cria uma nova análise e mantém a anterior.
 - **Histórico agrícola** (safra, cultura, produtividade, irrigação, adubação, calagem, cobertura): por enquanto só registro, não altera a comparação.
 
+## Mapa ambiental (`/mapa`)
+
+Mapa interativo com camadas ambientais, talhões desenhados, filtro de período e séries históricas da área selecionada.
+
+- **Camadas** (`services/environment/catalog.ts`): IMERG (chuva), SMAP L4 (umidade 0–5 cm e 0–100 cm), MERRA-2 (temperatura mensal), AIRS (umidade relativa mensal), MODIS NDVI 16 dias e SRTM são **imagens oficiais do NASA GIBS**, com a paleta e a legenda oficiais — nada é recolorido, interpolado ou simulado. Declividade é calculada no navegador (Terrain Tiles/SRTM, método de Horn, classes Embrapa). Textura do solo vem do cadastro. HLS 30 m e mapa pedológico aparecem como "Em breve".
+- **Datas**: o GIBS devolve imagem vazia para datas sem produto, então `gibsTime.ts` consulta as datas publicadas (DescribeDomains) e exibe a mais próxima, avisando na legenda quando difere da escolhida.
+- **Talhões**: desenho e edição de vértices no mapa, validação (contorno cruzado, fora da propriedade), importação/exportação GeoJSON (`lib/geojson.ts`, EPSG:4326). Talhões de exemplo levam o selo "Exemplo".
+- **Indicadores e gráficos**: NASA POWER (chuva, temperatura, UR), SMAP e MODIS no pixel que contém o centro da área; elevação/declividade sobre os pixels dentro do contorno. Cada bloco mostra fonte, resolução, método e origem (real/simulado/indisponível).
+- **Backend**: `services/environment/provider.ts` define os contratos (`EnvironmentProvider`, `PlotRepository`), os endpoints ASP.NET Core previstos e o esquema PostGIS sugerido.
+
 ## Limites deliberados
 
 - Indicadores de rotação são **índices simulados** (0–100) gerados por regras explícitas em `features/rotations/engine.ts`, exibidas na própria tela. Não estimam produtividade nem são recomendação agronômica validada.

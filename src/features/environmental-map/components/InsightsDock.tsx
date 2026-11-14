@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { memo, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, CircleSlash, FlaskConical, Info, Loader2, MapPin } from "lucide-react";
 import type { DataOrigin, Property } from "@/types";
 import { DataOriginBadge } from "@/components/shared";
@@ -32,18 +32,26 @@ interface Props {
 
 const v = (x: number | null | undefined, f = fmt.n1) => (x === null || x === undefined ? "—" : f(x));
 
-export function InsightsDock({ env, period, areaName, areaHa, isDemo, hasBoundary, texture, open, onToggle }: Props) {
+/** Memoizado: zoom, opacidade e demais ajustes do mapa não redesenham indicadores e gráficos. */
+export const InsightsDock = memo(function InsightsDock({ env, period, areaName, areaHa, isDemo, hasBoundary, texture, open, onToggle }: Props) {
   const [tab, setTab] = useState<Tab>("clima");
   const { climate, soil, vegetation, terrain } = env;
   const days = periodDays(period);
   const gran = granularityFor(days);
+  const { start, end } = period;
 
-  const ci = climate.status === "ready" ? climateIndicators(climate.data.records.filter((r) => r.date >= period.start && r.date <= period.end)) : null;
-  const si = soil.status === "ready" && soil.data.origin !== "indisponivel" ? soilIndicators(soil.data.records) : null;
-  const ni =
-    vegetation.status === "ready" && vegetation.data.origin !== "indisponivel"
-      ? ndviIndicators(vegetation.data.records.filter((r) => r.date >= period.start && r.date <= period.end))
-      : null;
+  const ci = useMemo(
+    () => (climate.status === "ready" ? climateIndicators(climate.data.records.filter((r) => r.date >= start && r.date <= end)) : null),
+    [climate, start, end],
+  );
+  const si = useMemo(() => (soil.status === "ready" && soil.data.origin !== "indisponivel" ? soilIndicators(soil.data.records) : null), [soil]);
+  const ni = useMemo(
+    () =>
+      vegetation.status === "ready" && vegetation.data.origin !== "indisponivel"
+        ? ndviIndicators(vegetation.data.records.filter((r) => r.date >= start && r.date <= end))
+        : null,
+    [vegetation, start, end],
+  );
   const t = terrain.status === "ready" ? terrain.data : null;
   const dominant = t ? t.slopeClasses.indexOf(Math.max(...t.slopeClasses)) : -1;
 
@@ -186,7 +194,9 @@ export function InsightsDock({ env, period, areaName, areaHa, isDemo, hasBoundar
       )}
     </section>
   );
-}
+});
+
+const isStale = (l?: Load<unknown>) => l?.status === "ready" && !!l.stale;
 
 function Indicator({
   label,
@@ -204,10 +214,16 @@ function Indicator({
   unavailable?: string;
 }) {
   return (
-    <div className="min-w-0 bg-surface px-4 py-2.5">
+    <div className={cn("min-w-0 bg-surface px-4 py-2.5 transition-opacity", isStale(load) && "opacity-60")} aria-busy={isStale(load)}>
       <div className="flex items-center justify-between gap-1">
         <p className="truncate text-xs text-muted-foreground">{label}</p>
-        {origin && !unavailable && <DataOriginBadge origin={origin} className="shrink-0" />}
+        {isStale(load) ? (
+          <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" /> Atualizando…
+          </span>
+        ) : (
+          origin && !unavailable && <DataOriginBadge origin={origin} className="shrink-0" />
+        )}
       </div>
       {unavailable ? (
         <p className="mt-1 flex items-start gap-1 text-xs text-muted-foreground">
@@ -232,7 +248,17 @@ function Indicator({
 }
 
 function ChartState<T>({ load, children }: { load: Load<T>; children: (d: T) => ReactNode }) {
-  if (load.status === "ready") return <>{children(load.data)}</>;
+  if (load.status === "ready")
+    return load.stale ? (
+      <div className="relative h-full" aria-busy>
+        <div className="h-full opacity-50 transition-opacity">{children(load.data)}</div>
+        <span className="absolute right-2 top-0 flex items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-xs text-muted-foreground shadow-sm">
+          <Loader2 className="size-3.5 animate-spin" /> Atualizando série…
+        </span>
+      </div>
+    ) : (
+      <>{children(load.data)}</>
+    );
   if (load.status === "error") return <Unavailable reason={`Não foi possível carregar: ${load.error}`} />;
   return (
     <div className="flex h-full min-h-[160px] items-center justify-center gap-2 rounded-md bg-muted/50 text-sm text-muted-foreground">

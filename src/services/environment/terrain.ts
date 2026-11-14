@@ -156,24 +156,54 @@ export async function computeTerrainStats(polygon: [number, number][]): Promise<
 }
 
 /** Pinta um tile de declividade (classes Embrapa) num canvas 256×256. Bordas do tile replicam o pixel vizinho. */
+const SLOPE_RGB = SLOPE_CLASSES.map((c) => [parseInt(c.color.slice(1, 3), 16), parseInt(c.color.slice(3, 5), 16), parseInt(c.color.slice(5, 7), 16)]);
+const renderedSlope = new Map<string, Promise<ImageData>>();
+
+/** Calcula (uma vez por tile, com cache) a imagem de classes de declividade. Laço sem alocações nem sqrt. */
+function slopeImage(z: number, x: number, y: number): Promise<ImageData> {
+  const key = `${z}/${x}/${y}`;
+  if (!renderedSlope.has(key)) {
+    const p = loadElevationTile(z, x, y).then((elev) => {
+      const cell = pixelSizeM(pxToLat(y * TILE + TILE / 2, z), z);
+      // compara o gradiente ao quadrado com os limites ao quadrado: (pct/100 · 8·cell)²
+      const k = 8 * cell;
+      const limits = SLOPE_CLASSES.map((c) => (Number.isFinite(c.max) ? ((c.max / 100) * k) ** 2 : Infinity));
+      const img = new ImageData(TILE, TILE);
+      const d = img.data;
+      const last = TILE - 1;
+      for (let j = 0; j < TILE; j++) {
+        const jm = (j === 0 ? 0 : j - 1) * TILE, j0 = j * TILE, jp = (j === last ? last : j + 1) * TILE;
+        for (let i = 0; i < TILE; i++) {
+          const im = i === 0 ? 0 : i - 1, ip = i === last ? last : i + 1;
+          const a = elev[jm + im], b = elev[jm + i], c = elev[jm + ip];
+          const dd = elev[j0 + im], f = elev[j0 + ip];
+          const g = elev[jp + im], h = elev[jp + i], q = elev[jp + ip];
+          const gx = c + 2 * f + q - (a + 2 * dd + g);
+          const gy = g + 2 * h + q - (a + 2 * b + c);
+          const s2 = gx * gx + gy * gy;
+          let ci = 0;
+          while (s2 >= limits[ci]) ci++;
+          const rgb = SLOPE_RGB[ci];
+          const o = (j0 + i) * 4;
+          d[o] = rgb[0];
+          d[o + 1] = rgb[1];
+          d[o + 2] = rgb[2];
+          d[o + 3] = 255;
+        }
+      }
+      return img;
+    });
+    p.catch(() => renderedSlope.delete(key));
+    if (renderedSlope.size > 150) renderedSlope.delete(renderedSlope.keys().next().value!);
+    renderedSlope.set(key, p);
+  }
+  return renderedSlope.get(key)!;
+}
+
+/** Pinta um tile de declividade (classes Embrapa) num canvas 256×256. Bordas do tile replicam o pixel vizinho. */
 export async function renderSlopeTile(canvas: HTMLCanvasElement, z: number, x: number, y: number) {
-  const elev = await loadElevationTile(z, x, y);
-  const at = (i: number, j: number) => elev[Math.min(Math.max(j, 0), TILE - 1) * TILE + Math.min(Math.max(i, 0), TILE - 1)];
-  const lat = pxToLat(y * TILE + TILE / 2, z);
-  const cell = pixelSizeM(lat, z);
-  const rgb = SLOPE_CLASSES.map((c) => [parseInt(c.color.slice(1, 3), 16), parseInt(c.color.slice(3, 5), 16), parseInt(c.color.slice(5, 7), 16)]);
+  const img = await slopeImage(z, x, y);
   canvas.width = TILE;
   canvas.height = TILE;
-  const ctx = canvas.getContext("2d")!;
-  const img = ctx.createImageData(TILE, TILE);
-  for (let j = 0; j < TILE; j++)
-    for (let i = 0; i < TILE; i++) {
-      const [r, g, bl] = rgb[slopeClassIndex(hornSlope(at, i, j, cell))];
-      const o = (j * TILE + i) * 4;
-      img.data[o] = r;
-      img.data[o + 1] = g;
-      img.data[o + 2] = bl;
-      img.data[o + 3] = 255;
-    }
-  ctx.putImageData(img, 0, 0);
+  canvas.getContext("2d")!.putImageData(img, 0, 0);
 }

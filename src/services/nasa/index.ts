@@ -79,6 +79,10 @@ export function getDailyClimateRange(lat: number, lon: number, start: string, en
   const avail = defaultWindow().end;
   const e = end > avail ? avail : end;
   const s = start < PRODUCT_START.power ? PRODUCT_START.power : start;
+  // períodos dentro da janela padrão (~13 meses) reaproveitam a mesma consulta já em cache:
+  // trocar 30 d → 90 d → 12 meses → safra não refaz a requisição à NASA
+  if (s >= defaultWindow().start)
+    return getDailyClimate(lat, lon, mode).then((series) => ({ ...series, records: series.records.filter((r) => r.date >= s && r.date <= e) }));
   const key = `power-range:${mode}:${lat.toFixed(4)}:${lon.toFixed(4)}:${s}:${e}`;
   const mock = () => fetchPowerMock(lat, lon, s, e);
   return cached(key, () => (mode === "api" ? withFallback(() => fetchPowerApi(lat, lon, s, e), mock) : mock()));
@@ -91,6 +95,9 @@ export function getSoilMoistureRange(lat: number, lon: number, start: string, en
   const e = end > avail ? avail : end;
   const s = start < PRODUCT_START.smap ? PRODUCT_START.smap : start;
   const days = Math.max(1, dayDiff(s, e));
+  // últimos 60 dias: mesma consulta do painel inicial (já em cache)
+  if (e === avail && days <= 60)
+    return getSoilMoisture(lat, lon, mode).then((r) => (r.origin === "indisponivel" ? r : { ...r, records: r.records.filter((x) => x.date >= s) }));
   const key = `smap-range:${mode}:${lat.toFixed(4)}:${lon.toFixed(4)}:${s}:${e}`;
   const mock = () => fetchSmapMock(lat, lon, s, e, days);
   return cached(key, () => (mode === "api" ? withFallback(() => fetchSmapReal(lat, lon, e, days), mock) : mock()));
@@ -100,6 +107,8 @@ export function getVegetationRange(lat: number, lon: number, start: string, end:
   if (end < PRODUCT_START.modis)
     return Promise.resolve({ origin: "indisponivel", source: "NASA MODIS", reason: "O MODIS NDVI só existe a partir de fev/2000." });
   const s = start < PRODUCT_START.modis ? PRODUCT_START.modis : start;
+  // dentro da janela padrão: reaproveita a série de ~13 meses (o gráfico recorta o período)
+  if (s >= defaultWindow().start) return getVegetationIndex(lat, lon, mode);
   // fetchNdviReal recua 30 dias a partir de `end` (latência de publicação); damos essa folga ao período
   const e = parseISODate(end);
   e.setDate(e.getDate() + 30);

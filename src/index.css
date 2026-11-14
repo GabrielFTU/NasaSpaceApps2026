@@ -79,6 +79,23 @@ body {
 .leaflet-container.picker {
   cursor: crosshair;
 }
+.leaflet-container.envmap {
+  border-radius: 0;
+}
+/* Rótulo do talhão selecionado (Mapa Ambiental) */
+.envmap .envmap-label {
+  background: rgb(11 61 16 / 0.85);
+  border: 0;
+  color: #fff;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+}
+.envmap .envmap-label::before {
+  display: none;
+}
 .semeia-vertex {
   background: #ffffff;
   border: 2.5px solid #1d6f2c;
