@@ -1,0 +1,110 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/*
+ * Tokens do Semeia (convenção shadcn/ui).
+ * Verde agrícola como cor primária, fundo off-white, tinta quase preta levemente esverdeada.
+ */
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-background: #f4f6f2;
+  --color-surface: #ffffff;
+  --color-foreground: #12261a;
+  --color-muted: #f0f2ed;
+  --color-muted-foreground: #586459;
+  --color-subtle-foreground: #849084;
+  --color-border: #e4e8e1;
+  --color-input: #d3d9cf;
+  --color-ring: #1f7a32;
+
+  /* verde da marca (folhas da logo) */
+  --color-primary: #1d6f2c;
+  --color-primary-hover: #175a23;
+  --color-primary-foreground: #ffffff;
+  --color-primary-soft: #e6f2e3;
+  --color-primary-soft-foreground: #1a5a26;
+  --color-brand-dark: #0b3d10;
+  --color-brand-lime: #7cc300;
+
+  --color-sidebar: #ffffff;
+
+  --color-danger: #b42f2f;
+  --color-danger-soft: #fbeaea;
+  --color-warning: #8a5a00;
+  --color-warning-soft: #fdf3dc;
+  --color-info: #255d99;
+  --color-info-soft: #e6eef8;
+  --color-success: #1f6a2b;
+  --color-success-soft: #e4f1e4;
+
+  /* Séries de gráficos (paleta categórica validada — ordem fixa) */
+  --color-series-1: #2a78d6;
+  --color-series-2: #eb6834;
+  --color-series-3: #1baf7a;
+  --color-series-4: #eda100;
+
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  --shadow-card: 0 1px 2px rgb(16 40 20 / 0.04), 0 2px 8px rgb(16 40 20 / 0.04);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Leaflet dentro de cards */
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: #e8eadf;
+  border-radius: var(--radius-lg);
+}
+.leaflet-container.picker {
+  cursor: crosshair;
+}
+.semeia-vertex {
+  background: #ffffff;
+  border: 2.5px solid #1d6f2c;
+  border-radius: 9999px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+  cursor: grab;
+}
+.semeia-vertex-first {
+  background: #7cc300;
+  border-color: #ffffff;
+}
+
+@keyframes semeia-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-in {
+  animation: semeia-fade-in 160ms ease-out;
+}
+
+input[type="range"] {
+  accent-color: var(--color-primary);
+}

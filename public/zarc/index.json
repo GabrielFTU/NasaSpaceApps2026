@@ -1,0 +1,277 @@
+{
+  "safra": "2026/2027",
+  "generatedAt": "2026-11-14T16:14:09.024Z",
+  "source": "https://dados.agricultura.gov.br/dataset/6d3d141c-885e-41a4-ab7f-dc8ff323b96f",
+  "ufs": {
+    "AC": {
+      "rotacao": {
+        "municipios": 22,
+        "bytes": 136906
+      },
+      "outras": {
+        "municipios": 22,
+        "bytes": 162231
+      }
+    },
+    "AL": {
+      "rotacao": {
+        "municipios": 102,
+        "bytes": 447877
+      },
+      "outras": {
+        "municipios": 102,
+        "bytes": 592362
+      }
+    },
+    "AM": {
+      "rotacao": {
+        "municipios": 62,
+        "bytes": 327431
+      },
+      "outras": {
+        "municipios": 62,
+        "bytes": 381803
+      }
+    },
+    "AP": {
+      "rotacao": {
+        "municipios": 16,
+        "bytes": 84809
+      },
+      "outras": {
+        "municipios": 16,
+        "bytes": 115956
+      }
+    },
+    "BA": {
+      "rotacao": {
+        "municipios": 417,
+        "bytes": 1868290
+      },
+      "outras": {
+        "municipios": 417,
+        "bytes": 2538756
+      }
+    },
+    "CE": {
+      "rotacao": {
+        "municipios": 184,
+        "bytes": 612656
+      },
+      "outras": {
+        "municipios": 184,
+        "bytes": 806101
+      }
+    },
+    "DF": {
+      "rotacao": {
+        "municipios": 1,
+        "bytes": 11415
+      },
+      "outras": {
+        "municipios": 1,
+        "bytes": 10525
+      }
+    },
+    "ES": {
+      "rotacao": {
+        "municipios": 78,
+        "bytes": 554811
+      },
+      "outras": {
+        "municipios": 78,
+        "bytes": 669641
+      }
+    },
+    "GO": {
+      "rotacao": {
+        "municipios": 246,
+        "bytes": 1360508
+      },
+      "outras": {
+        "municipios": 246,
+        "bytes": 1679503
+      }
+    },
+    "MA": {
+      "rotacao": {
+        "municipios": 217,
+        "bytes": 1083303
+      },
+      "outras": {
+        "municipios": 217,
+        "bytes": 1266826
+      }
+    },
+    "MG": {
+      "rotacao": {
+        "municipios": 853,
+        "bytes": 5019099
+      },
+      "outras": {
+        "municipios": 853,
+        "bytes": 6929238
+      }
+    },
+    "MS": {
+      "rotacao": {
+        "municipios": 79,
+        "bytes": 722057
+      },
+      "outras": {
+        "municipios": 79,
+        "bytes": 578749
+      }
+    },
+    "MT": {
+      "rotacao": {
+        "municipios": 142,
+        "bytes": 788900
+      },
+      "outras": {
+        "municipios": 142,
+        "bytes": 961320
+      }
+    },
+    "PA": {
+      "rotacao": {
+        "municipios": 144,
+        "bytes": 812161
+      },
+      "outras": {
+        "municipios": 144,
+        "bytes": 1036857
+      }
+    },
+    "PB": {
+      "rotacao": {
+        "municipios": 223,
+        "bytes": 796469
+      },
+      "outras": {
+        "municipios": 223,
+        "bytes": 1081563
+      }
+    },
+    "PE": {
+      "rotacao": {
+        "municipios": 185,
+        "bytes": 718012
+      },
+      "outras": {
+        "municipios": 185,
+        "bytes": 1057715
+      }
+    },
+    "PI": {
+      "rotacao": {
+        "municipios": 224,
+        "bytes": 987309
+      },
+      "outras": {
+        "municipios": 224,
+        "bytes": 1028575
+      }
+    },
+    "PR": {
+      "rotacao": {
+        "municipios": 399,
+        "bytes": 3647244
+      },
+      "outras": {
+        "municipios": 399,
+        "bytes": 2690796
+      }
+    },
+    "RJ": {
+      "rotacao": {
+        "municipios": 92,
+        "bytes": 591491
+      },
+      "outras": {
+        "municipios": 92,
+        "bytes": 769916
+      }
+    },
+    "RN": {
+      "rotacao": {
+        "municipios": 167,
+        "bytes": 542234
+      },
+      "outras": {
+        "municipios": 168,
+        "bytes": 753116
+      }
+    },
+    "RO": {
+      "rotacao": {
+        "municipios": 52,
+        "bytes": 259369
+      },
+      "outras": {
+        "municipios": 52,
+        "bytes": 362264
+      }
+    },
+    "RR": {
+      "rotacao": {
+        "municipios": 15,
+        "bytes": 90522
+      },
+      "outras": {
+        "municipios": 15,
+        "bytes": 113420
+      }
+    },
+    "RS": {
+      "rotacao": {
+        "municipios": 499,
+        "bytes": 3891935
+      },
+      "outras": {
+        "municipios": 499,
+        "bytes": 3057427
+      }
+    },
+    "SC": {
+      "rotacao": {
+        "municipios": 295,
+        "bytes": 2158618
+      },
+      "outras": {
+        "municipios": 295,
+        "bytes": 1792551
+      }
+    },
+    "SE": {
+      "rotacao": {
+        "municipios": 75,
+        "bytes": 304839
+      },
+      "outras": {
+        "municipios": 75,
+        "bytes": 444142
+      }
+    },
+    "SP": {
+      "rotacao": {
+        "municipios": 645,
+        "bytes": 4387558
+      },
+      "outras": {
+        "municipios": 645,
+        "bytes": 5477679
+      }
+    },
+    "TO": {
+      "rotacao": {
+        "municipios": 139,
+        "bytes": 649787
+      },
+      "outras": {
+        "municipios": 139,
+        "bytes": 858563
+      }
+    }
+  }
+}
