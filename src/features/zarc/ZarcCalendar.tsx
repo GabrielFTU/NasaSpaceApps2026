@@ -48,7 +48,8 @@ export function ZarcCalendar({ rows, footer, empty, className }: { rows: Calenda
   const today = decendioOf(new Date());
   return (
     <div className={cn("flex flex-col gap-3", className)}>
-      <div className="overflow-x-auto">
+      {/* rolável pelo teclado também (WCAG 2.1.1): recebe foco e tem nome */}
+      <div className="overflow-x-auto rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40" tabIndex={0} role="region" aria-label="Calendário de plantio do ZARC (role para os lados)">
         <table className="w-full min-w-[720px] border-separate border-spacing-y-1.5 text-[13px]">
           <thead>
             <tr className="text-[11px] text-subtle-foreground">

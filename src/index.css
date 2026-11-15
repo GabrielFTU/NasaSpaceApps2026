@@ -19,7 +19,8 @@
   --color-foreground: #102318;
   --color-muted: #f4f3ee;
   --color-muted-foreground: #5b675d;
-  --color-subtle-foreground: #8a958b;
+  /* #8a958b tinha contraste 3,1:1 (WCAG pede 4,5:1). #667168 dá 5,1:1 no branco e 4,6:1 nos fundos verdes claros. */
+  --color-subtle-foreground: #667168;
   --color-border: #e9e7e0;
   --color-input: #d8ded4;
   --color-ring: #1f7a32;

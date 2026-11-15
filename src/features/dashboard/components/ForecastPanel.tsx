@@ -9,7 +9,6 @@ import { useForecast } from "../useForecast";
 
 const RAIN = "#2a78d6";
 /** Intervalo do avanço automático do carrossel (ms) — devagar de propósito. */
-const AUTO_MS = 4000;
 const GAP = 8;
 
 type Span = "7" | "15" | "30";
@@ -88,12 +87,10 @@ function DayCard({ d, i, max }: { d: ForecastDay; i: number; max: number }) {
 }
 
 /**
- * Faixa de dias em carrossel: arrasta com mouse/dedo, setas nas laterais e avanço automático lento.
- * O avanço pausa enquanto a pessoa interage (mouse em cima, foco, arrasto) e respeita "reduzir movimento".
+ * Faixa de dias em carrossel: arrasta com mouse/dedo, setas nas laterais, rolagem por teclado.
  */
 function DayCarousel({ days }: { days: ForecastDay[] }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [paused, setPaused] = useState(false);
   const [edges, setEdges] = useState({ start: true, end: true });
   const drag = useRef<{ x: number; left: number } | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -121,26 +118,11 @@ function DayCarousel({ days }: { days: ForecastDay[] }) {
     return () => window.removeEventListener("resize", updateEdges);
   }, []);
 
-  useEffect(() => {
-    if (paused || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const id = window.setInterval(() => {
-      const el = ref.current;
-      if (!el || el.scrollWidth <= el.clientWidth + 2) return; // tudo cabe: nada a girar
-      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 2;
-      if (atEnd) el.scrollTo({ left: 0, behavior: "smooth" });
-      else go(1);
-    }, AUTO_MS);
-    return () => window.clearInterval(id);
-  }, [paused, days.length]);
+  // Sem avanço automático: conteúdo que se move sozinho sem botão de pausa fere a WCAG 2.2.2
+  // e tira da tela o dia que o agricultor está lendo. Setas, arrasto e rolagem continuam.
 
   return (
-    <div
-      className="group relative mt-2"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
-    >
+    <div className="group relative mt-2">
       <div
         ref={ref}
         onScroll={updateEdges}
@@ -163,8 +145,6 @@ function DayCarousel({ days }: { days: ForecastDay[] }) {
           drag.current = null;
           setDragging(false);
         }}
-        onTouchStart={() => setPaused(true)}
-        onTouchEnd={() => window.setTimeout(() => setPaused(false), AUTO_MS)}
         className={cn(
           "flex gap-2 overflow-x-auto pb-1 select-none",
           dragging ? "cursor-grabbing snap-none" : "cursor-grab snap-x snap-mandatory scroll-smooth",

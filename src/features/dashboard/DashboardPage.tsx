@@ -19,6 +19,7 @@ import { useEnvironmentalData } from "./useEnvironmentalData";
 import { lastNDays, mean, sum } from "./climateStats";
 import { KpiTile } from "./components/KpiTile";
 import { ForecastPanel } from "./components/ForecastPanel";
+import { FirstSteps } from "./components/FirstSteps";
 import { ScenarioSummary } from "@/features/rotations/components/ScenarioSummary";
 
 const C = { temp: "#eb6834", rain: "#2a78d6", rh: "#1baf7a", ndvi: "#5aa300" };
@@ -95,6 +96,7 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-5">
+      <h1 className="sr-only">Início — {property.name}</h1>
       {/* Hero */}
       <section className="relative overflow-hidden rounded-xl border border-border bg-white bg-orbit shadow-card">
         <div className="absolute inset-y-0 right-0 hidden w-[58%] md:block">
@@ -128,6 +130,8 @@ export function DashboardPage() {
           <PropertyMap lat={property.latitude} lon={property.longitude} boundary={property.boundary} interactive={false} className="h-44 rounded-none" />
         </div>
       </section>
+
+      <FirstSteps property={property} />
 
       {/* Previsão — o que o agricultor decide hoje */}
       <ForecastPanel lat={property.latitude} lon={property.longitude} />
@@ -337,8 +341,11 @@ export function DashboardPage() {
 function Row({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3 py-3">
-      <span className="text-muted-foreground [&_svg]:size-[18px]">{icon}</span>
-      <dt className="flex-1">{label}</dt>
+      {/* ícone dentro do <dt>: um <dl> só pode conter dt/dd (dentro de div) */}
+      <dt className="flex flex-1 items-center gap-3">
+        <span aria-hidden className="text-muted-foreground [&_svg]:size-[18px]">{icon}</span>
+        {label}
+      </dt>
       <dd className="text-right font-semibold">{value}</dd>
     </div>
   );

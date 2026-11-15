@@ -1,4 +1,5 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { HelpTip } from "@/components/ui/help";
 import { Link } from "react-router-dom";
 import {
   Check,
@@ -80,6 +81,13 @@ export function EnvironmentalMapPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => setMapDate(period.end), [period.end]);
+  // painel de talhões: Esc fecha
+  useEffect(() => {
+    if (!plotsOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setPlotsOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [plotsOpen]);
   useEffect(() => setTileErrors(new Set()), [mapDate, activeId]);
 
   const active = activeId ? layerById(activeId) : null;
@@ -212,6 +220,7 @@ export function EnvironmentalMapPage() {
   return (
     <div className="lg:h-full lg:overflow-y-auto">
       <div className="mx-auto flex max-w-[1560px] flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8">
+        <h1 className="sr-only">Mapa ambiental — {property.name}</h1>
         {/* Filtros: uma barra só, rótulo discreto + valor */}
         <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-surface md:flex-row md:items-stretch md:divide-x md:divide-y-0">
           <FilterField label="Camada">
@@ -289,26 +298,27 @@ export function EnvironmentalMapPage() {
 
         {draw ? (
           /* Ferramenta de desenho: substitui os controles do topo */
-          <div className="pointer-events-none absolute inset-x-3 top-3 z-[500] flex justify-center">
-            <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-lg glass border px-3 py-2 ">
-              <div className="mr-1 text-[13px]">
+          /* no celular fica embaixo e compacta: no topo cobria 1/4 do mapa e os botões de zoom */
+          <div className="pointer-events-none absolute inset-x-2 bottom-9 z-[500] flex justify-center sm:inset-x-3 sm:top-3 sm:bottom-auto">
+            <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 rounded-lg glass border px-2.5 py-2 sm:gap-2 sm:px-3">
+              <div className="mr-1 min-w-0 basis-full text-[13px] sm:basis-auto" aria-live="polite">
                 <p className="font-semibold">{draw.editingId ? "Editando contorno" : "Novo talhão"}</p>
                 <p className="tabular text-muted-foreground">
                   {draw.points.length < 3
-                    ? `Clique nos cantos do talhão · ${draw.points.length} de 3 pontos`
+                    ? `Toque nos cantos do talhão · ${draw.points.length} de 3 pontos`
                     : `${fmt.n2(drawArea)} ha · ${draw.points.length} pontos · ${fmt.n0(polygonPerimeterM(draw.points))} m`}
                 </p>
               </div>
-              <Button size="sm" variant="outline" onClick={() => setDraw({ ...draw, points: draw.points.slice(0, -1) })} disabled={!draw.points.length}>
-                <Undo2 /> Desfazer
+              <Button size="sm" variant="outline" aria-label="Desfazer último ponto" title="Desfazer último ponto" onClick={() => setDraw({ ...draw, points: draw.points.slice(0, -1) })} disabled={!draw.points.length}>
+                <Undo2 /> <span className="hidden sm:inline">Desfazer</span>
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setDraw({ ...draw, points: [] })} disabled={!draw.points.length}>
-                <Eraser /> Limpar
+              <Button size="sm" variant="outline" aria-label="Limpar todos os pontos" title="Limpar todos os pontos" onClick={() => setDraw({ ...draw, points: [] })} disabled={!draw.points.length}>
+                <Eraser /> <span className="hidden sm:inline">Limpar</span>
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setDraw(null)}>
                 <X /> Cancelar
               </Button>
-              <Button size="sm" onClick={finishDraw} disabled={draw.points.length < 3}>
+              <Button size="sm" className="ml-auto sm:ml-0" onClick={finishDraw} disabled={draw.points.length < 3}>
                 <Check /> Concluir
               </Button>
             </div>
@@ -361,7 +371,8 @@ export function EnvironmentalMapPage() {
               </div>
             )}
             {active && chip && (!coarse || areaTint?.opacity !== WHITE_TINT) && (
-              <div className="pointer-events-none absolute bottom-3 right-3 z-[500]">
+              // no celular a legenda sobe para não cobrir o seletor "Satélite/Mapa" no canto inferior esquerdo
+              <div className="pointer-events-none absolute bottom-14 right-3 z-[500] max-w-[calc(100%-1.5rem)] sm:bottom-3">
                 <MapLegend layer={active} title={active.id === "ndvi" ? "Índice de vegetação (NDVI)" : chip.label} zoom={zoom} />
               </div>
             )}
@@ -369,10 +380,10 @@ export function EnvironmentalMapPage() {
         )}
 
         {plotsOpen && (
-          <div className="absolute inset-y-0 left-0 z-[600] flex w-[min(340px,100%)] flex-col border-r border-border bg-surface shadow-lg">
+          <div role="region" aria-label="Talhões" className="absolute inset-y-0 left-0 z-[600] flex w-[min(340px,100%)] flex-col border-r border-border bg-surface shadow-lg">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <p className="text-sm font-semibold">Talhões · {property.name}</p>
-              <Button variant="ghost" size="icon-sm" onClick={() => setPlotsOpen(false)} aria-label="Fechar">
+              <Button variant="ghost" size="icon-sm" onClick={() => setPlotsOpen(false)} aria-label="Fechar lista de talhões" autoFocus>
                 <X />
               </Button>
             </div>
@@ -427,7 +438,7 @@ export function EnvironmentalMapPage() {
           ) : (
             <section className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-input bg-surface/60 p-6 text-center text-sm text-muted-foreground">
               <Layers className="size-5" />
-              Escolha uma camada em “O que deseja visualizar?”.
+              Escolha o que quer ver no campo “Camada”, acima do mapa — por exemplo, vegetação ou chuva.
             </section>
           )}
         </div>
@@ -601,6 +612,10 @@ function PlotsPanel(props: {
       <Button size="sm" onClick={props.onDraw}>
         <Plus /> Desenhar novo talhão
       </Button>
+      <HelpTip question="O que é um talhão?">
+        É uma parte da propriedade que você planta e cuida do mesmo jeito — por exemplo, “a roça de baixo” ou “o pedaço perto da sede”.
+        Separar em talhões deixa o Semeia mostrar chuva, vegetação e solo de cada pedaço, em vez de uma média da fazenda inteira.
+      </HelpTip>
 
       {props.plots.length === 0 ? (
         <p className="rounded-md border border-dashed border-input px-3 py-6 text-center text-[13px] text-muted-foreground">

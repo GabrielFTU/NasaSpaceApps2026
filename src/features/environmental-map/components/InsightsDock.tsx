@@ -146,7 +146,7 @@ function Row({ icon, label, load, value, hint, unavailable }: { icon: ReactNode;
       {unavailable ? (
         <span className="text-xs text-subtle-foreground">—</span>
       ) : !load || load.status === "loading" || load.status === "idle" ? (
-        <span className="h-5 w-16 animate-pulse rounded bg-muted" aria-label="Carregando" />
+        <span role="status" className="h-5 w-16 animate-pulse rounded bg-muted"><span className="sr-only">Carregando…</span></span>
       ) : load.status === "error" ? (
         <span className="text-xs text-danger" title={load.error}>
           indisponível

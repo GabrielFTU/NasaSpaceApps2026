@@ -147,7 +147,7 @@ export function ActiveLayerCard(p: Props) {
             <CircleSlash className="mt-0.5 size-3.5 shrink-0" /> {h.unavailable}
           </p>
         ) : loading ? (
-          <div className="h-11 w-32 animate-pulse rounded-md bg-muted" aria-label="Carregando" />
+          <div role="status" className="h-11 w-32 animate-pulse rounded-md bg-muted"><span className="sr-only">Carregando…</span></div>
         ) : h.load?.status === "error" ? (
           <p className="text-[13px] text-danger">Não disponível agora.</p>
         ) : (

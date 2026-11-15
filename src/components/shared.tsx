@@ -95,11 +95,14 @@ export function SpaceAppsLogo({ className }: { className?: string }) {
 }
 
 /** Marca: símbolo da folha + logotipo tipográfico na fonte display (nítido em qualquer tamanho). */
-export function Logo({ className, size = "md" }: { className?: string; size?: "sm" | "md" }) {
+export function Logo({ className, size = "md", compact }: { className?: string; size?: "sm" | "md"; compact?: boolean }) {
   return (
     <span className={cn("inline-flex select-none items-center gap-2", className)}>
       <img src="/logo-mark.png" alt="" className={size === "sm" ? "h-6 w-auto" : "h-7 w-auto"} draggable={false} />
-      <span className={cn("font-display font-bold leading-none text-brand-dark", size === "sm" ? "text-[19px]" : "text-[23px]")}>Semeia</span>
+      {/* compact: em telas muito estreitas (< 400 px) só o símbolo, para caber o nome da propriedade */}
+      <span className={cn("font-display font-bold leading-none text-brand-dark", size === "sm" ? "text-[19px]" : "text-[23px]", compact && "hidden min-[400px]:inline")}>
+        Semeia
+      </span>
     </span>
   );
 }

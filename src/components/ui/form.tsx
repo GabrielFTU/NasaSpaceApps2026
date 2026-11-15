@@ -2,8 +2,9 @@ import { forwardRef, useId, type InputHTMLAttributes, type ReactNode, type Selec
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// 16 px no celular: abaixo disso o Safari/iOS dá zoom ao focar o campo e desalinha a tela
 const fieldBase =
-  "w-full rounded-md border border-input bg-surface px-3 text-sm text-foreground placeholder:text-subtle-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:border-ring disabled:opacity-60 aria-[invalid=true]:border-danger aria-[invalid=true]:focus-visible:ring-danger/30";
+  "w-full rounded-md border border-input bg-surface px-3 text-base sm:text-sm text-foreground placeholder:text-subtle-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:border-ring disabled:opacity-60 aria-[invalid=true]:border-danger aria-[invalid=true]:focus-visible:ring-danger/30";
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(({ className, ...props }, ref) => (
   <input ref={ref} className={cn(fieldBase, "h-9", className)} {...props} />

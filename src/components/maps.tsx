@@ -143,6 +143,8 @@ export function AreaDrawer({ points, onChange, initialCenter, flyTarget = null, 
             key={i}
             position={p}
             icon={i === 0 ? firstVertexIcon : vertexIcon}
+            title={`Ponto ${i + 1} do contorno — arraste para ajustar`}
+            alt={`Ponto ${i + 1} do contorno`}
             draggable
             eventHandlers={{
               drag: (e) => {
@@ -178,9 +180,10 @@ export function AreaDrawer({ points, onChange, initialCenter, flyTarget = null, 
         </div>
       </div>
       {points.length < 3 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-6 z-[500] flex justify-center px-3">
+        // acima da atribuição do mapa (que quebra em duas linhas no celular)
+        <div className="pointer-events-none absolute inset-x-0 bottom-12 z-[500] flex justify-center px-3">
           <p className="rounded-full bg-[#0b3d10]/85 px-4 py-1.5 text-center text-[13px] font-medium text-white shadow">
-            Clique nos cantos da sua área para desenhar o contorno
+            Toque ou clique nos cantos da sua área para marcar o contorno
           </p>
         </div>
       )}
@@ -195,6 +198,7 @@ function MapButton({ onClick, disabled, label, children }: { onClick: () => void
       onClick={onClick}
       disabled={disabled}
       title={label}
+      aria-label={label}
       className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md glass px-2.5 text-[13px] font-medium text-foreground  hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:size-4"
     >
       {children}

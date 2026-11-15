@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { HelpTip } from "@/components/ui/help";
+import { Link, useBlocker, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { ArrowLeft, Check, Loader2, MapPinned, MousePointerClick, Search, WandSparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fmt } from "@/lib/format";
@@ -101,6 +103,32 @@ export function PropertyFormPage() {
   const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null);
   const [drawerKey, setDrawerKey] = useState(0);
 
+  // Perda acidental de dados: avisa antes de sair (link, menu, voltar do navegador ou fechar a aba)
+  const [initial] = useState(() => JSON.stringify([values, soilMode, samples, history]));
+  const dirty = JSON.stringify([values, soilMode, samples, history]) !== initial;
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirtyRef.current && !savedRef.current && currentLocation.pathname !== nextLocation.pathname);
+  useEffect(() => {
+    const onUnload = (e: BeforeUnloadEvent) => {
+      if (dirtyRef.current && !savedRef.current) e.preventDefault();
+    };
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, []);
+  const leaveDialog = (
+    <ConfirmDialog
+      open={blocker.state === "blocked"}
+      onClose={() => blocker.state === "blocked" && blocker.reset()}
+      onConfirm={() => blocker.state === "blocked" && blocker.proceed()}
+      tone="default"
+      title="Sair sem salvar?"
+      description="Você preencheu dados que ainda não foram salvos. Se sair agora, eles serão perdidos."
+      confirmLabel="Sair sem salvar"
+      cancelLabel="Continuar editando"
+    />
+  );
+
   if (isEdit && !existing) {
     return (
       <EmptyState
@@ -147,6 +175,7 @@ export function PropertyFormPage() {
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (saving) return; // duplo clique / Enter repetido não cadastra duas vezes
     setSubmitted(true);
     const errs = validateProperty(values);
     setErrors(errs);
@@ -175,6 +204,7 @@ export function PropertyFormPage() {
 
   return (
     <form onSubmit={onSubmit} noValidate>
+      {leaveDialog}
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <Link to="/propriedades" className="mb-1 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
@@ -272,7 +302,7 @@ export function PropertyFormPage() {
                 <p className={cn("flex items-center gap-2 rounded-[10px] bg-muted px-3 py-2.5 text-[13px]", errors.boundary ? "text-danger" : "text-muted-foreground")}>
                   <MousePointerClick className="size-4 shrink-0" />
                   <span className="hidden lg:inline">Clique nos cantos da área no mapa ao lado.</span>
-                  <span className="lg:hidden">Clique nos cantos da área no mapa acima.</span>
+                  <span className="lg:hidden">Toque nos cantos da área no mapa acima.</span>
                 </p>
               )}
             </FormSection>
@@ -297,6 +327,11 @@ export function PropertyFormPage() {
               <div className="flex flex-col gap-1.5">
                 <Label>Textura</Label>
                 <SoilTexturePicker value={values.texture} onChange={(v) => set("texture", v)} />
+                <HelpTip question="Como sei se minha terra é arenosa?">
+                  Pegue um punhado de terra úmida e aperte na mão. <strong>Arenosa</strong>: é áspera e esfarela, não forma bolinha.{" "}
+                  <strong>Média</strong>: forma bolinha que quebra fácil. <strong>Argilosa</strong>: faz rolinho e gruda nos dedos. Na dúvida, escolha
+                  “Média” — dá para mudar depois ou informar a análise de solo no cadastro completo.
+                </HelpTip>
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label>Drenagem</Label>

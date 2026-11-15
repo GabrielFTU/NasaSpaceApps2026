@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { HelpTip } from "@/components/ui/help";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, CalendarRange, FlaskConical, MapPinned, Search, Sprout } from "lucide-react";
 import { useZarc } from "@/features/zarc/useZarc";
@@ -283,8 +284,9 @@ export function AnalysisWizardPage() {
         }
       />
 
-      {mode === "conversa" ? (
-        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+      {/* A conversa fica montada (só escondida) ao ir para o formulário: antes, "Revisar no formulário"
+          e voltar apagava todo o histórico do chat. */}
+      <div className={mode === "conversa" ? "grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]" : "hidden"}>
           <AnalysisChat
             variant="inline"
             context={buildAnalysisContext({
@@ -318,7 +320,7 @@ export function AnalysisWizardPage() {
             onEdit={() => setMode("formulario")}
           />
         </div>
-      ) : (
+      {mode === "formulario" && (
       <>
       <div className="mb-5">
         <Stepper steps={STEPS} current={step} onSelect={(i) => setStep(i)} />
@@ -370,6 +372,11 @@ export function AnalysisWizardPage() {
               
             </CardHeader>
             <CardContent className="flex flex-col gap-5">
+              <HelpTip question="Por que precisamos saber o que você plantou antes?">
+                O que vem antes muda o que vem depois: repetir a mesma cultura acumula pragas e doenças e cansa o solo, enquanto alternar (por
+                exemplo, soja depois milho) ajuda a quebrar esses ciclos. A sua rotação de hoje também é a base da comparação — as outras opções
+                são mostradas em relação a ela.
+              </HelpTip>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Hoje no verão">
                   {(p) => (

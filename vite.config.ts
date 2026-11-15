@@ -34,7 +34,21 @@ export default defineConfig(({ mode }) => {
   };
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      // lista dos arquivos do build: o service worker baixa tudo na instalação, para que telas
+      // nunca abertas também funcionem sem internet
+      {
+        name: "semeia-asset-list",
+        generateBundle(_, bundle) {
+          const files = Object.keys(bundle).filter((f) => f.startsWith("assets/")).map((f) => `/${f}`);
+          this.emitFile({ type: "asset", fileName: "asset-list.json", source: JSON.stringify(files) });
+        },
+      },
+    ],
+    // versão do build: muda a URL do service worker e invalida os caches antigos
+    define: { __APP_VERSION__: JSON.stringify(Date.now().toString(36)) },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),

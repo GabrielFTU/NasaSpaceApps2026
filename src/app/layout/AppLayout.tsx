@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigation } from "react-router-dom";
 import { Bell, ChevronDown, CloudSun, History, Home, Map as MapIcon, Menu, Settings, Sprout, X, BellOff, Layers } from "lucide-react";
 import { Logo, SpaceAppsLogo } from "@/components/shared";
 import { ImageCreditsLink } from "@/components/ImageCreditsDialog";
@@ -10,6 +10,8 @@ import { useEnvironmentalData } from "@/features/dashboard/useEnvironmentalData"
 import { evaluateAlerts } from "@/features/dashboard/alerts";
 import { lastNDays } from "@/features/dashboard/climateStats";
 import { cn } from "@/lib/utils";
+import { useOffline } from "@/lib/pwa";
+import { WifiOff } from "lucide-react";
 
 const NAV = [
   { to: "/", label: "Início", icon: Home, end: true },
@@ -76,12 +78,12 @@ function PropertySwitcher() {
   const property = useSelectedProperty();
   if (!property) return null;
   return (
-    <label className="relative flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium hover:bg-muted">
-      <MapIcon className="size-4 text-muted-foreground" />
-      <span className="max-w-[140px] truncate sm:max-w-[220px]">
+    <label className="relative flex min-h-9 min-w-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium hover:bg-muted focus-within:ring-2 focus-within:ring-ring/40">
+      <MapIcon className="hidden size-4 shrink-0 text-muted-foreground min-[400px]:block" />
+      <span className="min-w-0 truncate sm:max-w-[220px]">
         {property.name} <span className="hidden font-normal text-muted-foreground sm:inline">· {property.city}, {property.state}</span>
       </span>
-      <ChevronDown className="size-4 text-muted-foreground" />
+      <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
       <select
         aria-label="Trocar propriedade"
         value={property.id}
@@ -106,9 +108,14 @@ function AlertsBell() {
 
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    const close = (e: PointerEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   const active =
@@ -127,7 +134,8 @@ function AlertsBell() {
         )}
       </Button>
       {open && (
-        <div className="animate-in absolute right-0 top-11 z-[1000] w-80 max-w-[calc(100vw-2rem)] glass rounded-lg border p-2">
+        // no celular o painel ocupa a largura da tela (ancorado no sino ele saía pela esquerda)
+        <div className="animate-in glass fixed inset-x-4 top-16 z-[1000] max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-lg border p-2 sm:absolute sm:inset-x-auto sm:right-0 sm:top-11 sm:w-80">
           <p className="px-2 pt-1 pb-2 text-sm font-semibold">Alertas · {property?.name}</p>
           {active.length === 0 ? (
             <p className="flex items-center gap-2 rounded-md bg-muted px-3 py-3 text-[13px] text-muted-foreground">
@@ -146,6 +154,24 @@ function AlertsBell() {
           </Link>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Aviso de sem internet: diz o que continua funcionando e o que depende de conexão. */
+function OfflineBanner() {
+  const offline = useOffline();
+  if (!offline) return null;
+  return (
+    <div role="status" className="flex items-start gap-2.5 border-b border-[#f0dfb5] bg-warning-soft px-4 py-2.5 text-[13px] text-[#6d4700] sm:px-6 lg:px-8">
+      <WifiOff className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <p className="flex-1">
+        <strong>Sem internet.</strong> Suas propriedades, talhões e análises salvas continuam aqui. Clima, imagens de satélite, previsão e o
+        assistente precisam de conexão — os números mostrados podem ser da última vez que você esteve on-line.
+      </p>
+      <button type="button" onClick={() => window.location.reload()} className="min-h-6 shrink-0 cursor-pointer font-semibold underline underline-offset-2">
+        Tentar de novo
+      </button>
     </div>
   );
 }
@@ -173,13 +199,36 @@ function Avatar() {
 export function AppLayout() {
   const [open, setOpen] = useState(false);
   const location = useLocation();
+  const navigation = useNavigation();
   const title = TITLES.find(([re]) => re.test(location.pathname))?.[1] ?? "Semeia";
   const fullBleed = location.pathname.startsWith("/mapa");
+
+  // título da aba por tela (WCAG 2.4.2): "Propriedades · Semeia"
+  useEffect(() => {
+    document.title = title === "Semeia" ? "Semeia" : `${title} · Semeia`;
+  }, [title]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
     setOpen(false);
   }, [location.pathname]);
+
+  // menu mobile: Esc fecha, fundo não rola, foco volta ao botão que abriu
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const drawer = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    drawer.current?.querySelector<HTMLElement>("a,button")?.focus();
+    const trigger = menuButton.current;
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+      trigger?.focus();
+    };
+  }, [open]);
 
   return (
     <div className="flex min-h-full flex-col lg:pl-64">
@@ -199,7 +248,7 @@ export function AppLayout() {
       {open && (
         <div className="fixed inset-0 z-[900] lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
           <div className="scrim absolute inset-0" onClick={() => setOpen(false)} />
-          <aside className="animate-in absolute inset-y-0 left-0 flex w-72 max-w-[85%] flex-col overflow-y-auto rounded-r-xl bg-sidebar px-4 py-5 shadow-raised">
+          <aside ref={drawer} className="animate-in absolute inset-y-0 left-0 flex w-72 max-w-[85%] flex-col overflow-y-auto rounded-r-xl bg-sidebar px-4 py-5 shadow-raised">
             <div className="mb-6 flex items-center justify-between px-2">
               <Logo size="sm" />
               <Button variant="ghost" size="icon-sm" onClick={() => setOpen(false)} aria-label="Fechar menu">
@@ -212,14 +261,15 @@ export function AppLayout() {
       )}
 
       <header className="glass sticky top-0 z-[800] flex h-16 items-center gap-2 border-b !border-border/70 !shadow-none px-4 sm:px-6 lg:px-8">
-        <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(true)} aria-label="Abrir menu">
+        <Button ref={menuButton} variant="ghost" size="icon" className="shrink-0 lg:hidden" onClick={() => setOpen(true)} aria-label="Abrir menu" aria-expanded={open}>
           <Menu />
         </Button>
-        <h1 className="hidden truncate text-[18px] font-semibold sm:block">{title}</h1>
-        <Link to="/" className="sm:hidden" aria-label="Semeia — início">
-          <Logo size="sm" />
+        {/* título visual do cabeçalho; o h1 de cada tela fica no conteúdo (um por página) */}
+        <p className="hidden truncate text-[18px] font-semibold sm:block">{title}</p>
+        <Link to="/" className="shrink-0 sm:hidden" aria-label="Semeia — início">
+          <Logo size="sm" compact />
         </Link>
-        <div className="ml-auto flex items-center gap-1 sm:gap-2">
+        <div className="ml-auto flex min-w-0 items-center justify-end gap-1 sm:gap-2">
           <PropertySwitcher />
           <div className="mx-1 hidden h-6 w-px bg-border sm:block" />
           <AlertsBell />
@@ -227,6 +277,11 @@ export function AppLayout() {
         </div>
       </header>
 
+      <OfflineBanner />
+      {/* troca de tela com código ainda baixando (rede móvel lenta): barra fina no topo em vez de clique "sem resposta" */}
+      {navigation.state === "loading" && (
+        <div role="progressbar" aria-label="Carregando a próxima tela" className="fixed inset-x-0 top-0 z-[1200] h-0.5 animate-pulse bg-primary" />
+      )}
       {/* telas de mapa ocupam toda a área útil, sem margens nem largura máxima */}
       <main
         id="conteudo"

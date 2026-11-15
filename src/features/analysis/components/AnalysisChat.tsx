@@ -382,7 +382,16 @@ export function AnalysisChat({ context, variant = "floating", conversation, clas
         )}
       </header>
 
-      <div ref={scrollRef} className={cn("flex-1 space-y-3 overflow-y-auto px-4 py-4", inline && "bg-muted/40")} aria-live="polite">
+      {/* role=log + aria-busy: o leitor de tela anuncia a resposta inteira ao terminar, não cada pedaço do streaming */}
+      <div
+        ref={scrollRef}
+        role="log"
+        aria-live="polite"
+        aria-busy={busy}
+        aria-label="Mensagens"
+        tabIndex={0}
+        className={cn("flex-1 space-y-3 overflow-y-auto px-4 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40", inline && "bg-muted/40")}
+      >
         {bubbles.length === 0 && (
           <div className="flex flex-col gap-2">
             <p className="text-[13px] text-muted-foreground">Pergunte sobre culturas, solo, épocas de plantio ou o resultado da análise.</p>
@@ -430,7 +439,8 @@ export function AnalysisChat({ context, variant = "floating", conversation, clas
           ),
         )}
         {typing && (
-          <span className="flex w-fit gap-1 rounded-2xl rounded-bl-md bg-white px-3.5 py-3 shadow-sm ring-1 ring-border" aria-label="Escrevendo">
+          <span role="status" className="flex w-fit items-center gap-1 rounded-2xl rounded-bl-md bg-white px-3.5 py-3 shadow-sm ring-1 ring-border">
+            <span className="sr-only">O assistente está escrevendo…</span>
             {[0, 1, 2].map((d) => (
               <span key={d} className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60" style={{ animationDelay: `${d * 120}ms` }} />
             ))}
@@ -461,7 +471,7 @@ export function AnalysisChat({ context, variant = "floating", conversation, clas
             rows={1}
             placeholder={limitReached ? "Limite de mensagens desta conversa atingido" : conversation ? "Responda ou pergunte sobre a análise…" : "Escreva sua dúvida sobre o campo…"}
             aria-label="Sua mensagem"
-            className="max-h-28 min-h-[24px] flex-1 resize-none bg-transparent py-0.5 text-sm outline-none placeholder:text-subtle-foreground"
+            className="max-h-28 min-h-[24px] flex-1 resize-none bg-transparent py-0.5 text-base outline-none placeholder:text-subtle-foreground sm:text-sm"
           />
           {canSpeak && !busy && (
             <button

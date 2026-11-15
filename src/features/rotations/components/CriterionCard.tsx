@@ -18,7 +18,7 @@ const brlCompact = (v: number) => {
 
 const COMPAT_DOT: Record<Compatibility, string> = { alta: "bg-success", media: "bg-[#d99a00]", baixa: "bg-danger" };
 const COMPAT_LABEL: Record<Compatibility, string> = { alta: "Compatibilidade alta", media: "Compatibilidade média", baixa: "Compatibilidade baixa" };
-const TONE = { good: "text-success", mid: "text-[#a86f00]", bad: "text-danger" } as const;
+const TONE = { good: "text-success", mid: "text-warning", bad: "text-danger" } as const;
 const BAR = { good: "bg-success", mid: "bg-[#d99a00]", bad: "bg-danger" } as const;
 const SHORT: Record<PriorityKey, string> = { conservacao: "Solo", agua: "Água", produtividade: "Produtiv.", diversificacao: "Diversid." };
 
@@ -37,8 +37,9 @@ interface Props {
   recommended?: boolean;
 }
 
-const SLOT_SHORT = ["V1", "I1", "V2", "I2"];
-const DIFF_TONE: Record<Difficulty, string> = { 1: "text-success", 2: "text-[#a86f00]", 3: "text-danger" };
+// por extenso: "V1/I1" era um código que o agricultor precisava decifrar
+const SLOT_SHORT = ["Verão 1", "Inverno 1", "Verão 2", "Inverno 2"];
+const DIFF_TONE: Record<Difficulty, string> = { 1: "text-success", 2: "text-warning", 3: "text-danger" };
 /** "Soja → Milho · Soja → Trigo" (ano 1 · ano 2), sem repetir anual. */
 const shortSeq = (seq: string[]) =>
   [seq.slice(0, 2), seq.slice(2, 4)]
@@ -135,14 +136,14 @@ export function CriterionCard({ scenario: s, baseline, areaHa, edited, onReplace
           const c = CROP_MAP[id];
           if (e.skipped)
             return (
-              <li key={i} className="flex h-9 items-center gap-2 pl-9 text-xs text-subtle-foreground">
+              <li key={i} className="flex h-9 items-center gap-2 pl-[60px] text-xs text-subtle-foreground">
                 ↳ {cropName(id)} continua
               </li>
             );
           const zarcFlag = slot.zarc && (!slot.zarc.zoned ? "fora do ZARC" : (slot.zarc.minRisk ?? 0) >= 30 ? `risco ${slot.zarc.minRisk}%` : null);
           return (
             <li key={i} className="flex h-9 items-center gap-2">
-              <span className="w-5 shrink-0 text-[11px] font-medium text-subtle-foreground" title={SLOT_LABELS[i]}>
+              <span className="w-[52px] shrink-0 text-[11px] font-medium leading-tight text-subtle-foreground" title={SLOT_LABELS[i]}>
                 {SLOT_SHORT[i]}
               </span>
               <span
@@ -169,7 +170,7 @@ export function CriterionCard({ scenario: s, baseline, areaHa, edited, onReplace
                 >
                   {id === FALLOW_ID ? "Pousio" : cropName(id)}
                   {zarcFlag && (
-                    <span className={cn("ml-1.5 text-[11px] font-normal", slot.zarc?.zoned ? "text-[#a86f00]" : "text-danger")} title={slot.zarc?.windows || "sem Proagro/seguro"}>
+                    <span className={cn("ml-1.5 text-[11px] font-normal", slot.zarc?.zoned ? "text-warning" : "text-danger")} title={slot.zarc?.windows || "sem Proagro/seguro"}>
                       {zarcFlag}
                     </span>
                   )}
@@ -189,7 +190,9 @@ export function CriterionCard({ scenario: s, baseline, areaHa, edited, onReplace
       {/* Outras opções do mesmo critério */}
       {alternatives && alternatives.filter((a) => a.seq.join() !== s.sequence.join()).length > 0 && (
         <div className="mt-3 border-t border-border pt-3">
-          <p className="mb-1 text-[11px] text-muted-foreground">Outras opções</p>
+          <p className="mb-1 flex justify-between gap-2 text-[11px] text-muted-foreground">
+            Outras opções <span>lucro/ha · instabilidade</span>
+          </p>
           <ul>
             {alternatives
               .filter((a) => a.seq.join() !== s.sequence.join())
@@ -204,7 +207,9 @@ export function CriterionCard({ scenario: s, baseline, areaHa, edited, onReplace
                   >
                     <span className="min-w-0 flex-1 break-words">{shortSeq(a.seq)}</span>
                     <span className="tabular shrink-0 font-medium">{brlCompact(a.net)}</span>
-                    <span className={cn("tabular w-6 shrink-0 text-right text-[11px]", TONE[instabilityLevel(a.inst).tone])}>{a.inst}</span>
+                    <span className={cn("tabular w-6 shrink-0 text-right text-[11px]", TONE[instabilityLevel(a.inst).tone])} title={`Instabilidade ${instabilityLevel(a.inst).label.toLowerCase()} (${a.inst} de 100)`}>
+                      {a.inst}
+                    </span>
                   </button>
                 </li>
               ))}

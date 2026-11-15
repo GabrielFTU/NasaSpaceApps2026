@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { MapPinned, MoreHorizontal, Pencil, Plus, Sprout, Trash2, Home } from "lucide-react";
 import { useAppStore } from "@/app/store";
@@ -24,6 +24,19 @@ export function PropertiesPage() {
   const [menu, setMenu] = useState<string | null>(null);
 
   const totalArea = properties.reduce((a, p) => a + p.areaHa, 0);
+
+  // menu de ações: fecha ao tocar fora ou com Esc (antes só fechava com o mouse saindo — no celular ficava preso aberto)
+  useEffect(() => {
+    if (!menu) return;
+    const onDown = (e: PointerEvent) => !(e.target as HTMLElement).closest("[data-prop-menu]") && setMenu(null);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(null);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
 
   return (
     <>
@@ -61,7 +74,7 @@ export function PropertiesPage() {
                       <Home /> No início
                     </Badge>
                   )}
-                  <div className="absolute right-3 top-3 z-[500]">
+                  <div className="absolute right-3 top-3 z-[500]" data-prop-menu>
                     <Button
                       variant="outline"
                       size="icon-sm"
@@ -73,7 +86,7 @@ export function PropertiesPage() {
                       <MoreHorizontal />
                     </Button>
                     {menu === p.id && (
-                      <div className="glass animate-in absolute right-0 top-9 w-44 rounded-md border p-1" onMouseLeave={() => setMenu(null)}>
+                      <div className="glass animate-in absolute right-0 top-9 w-44 rounded-md border p-1">
                         <MenuItem icon={<Pencil />} onClick={() => navigate(`/propriedades/${p.id}/editar`)}>
                           Editar
                         </MenuItem>

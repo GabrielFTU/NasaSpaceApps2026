@@ -1,17 +1,8 @@
 import { createBrowserRouter, Link, RouterProvider } from "react-router-dom";
 import { AppLayout } from "./layout/AppLayout";
-import { DashboardPage } from "@/features/dashboard/DashboardPage";
-import { ClimatePage } from "@/features/dashboard/ClimatePage";
-import { PropertiesPage } from "@/features/properties/PropertiesPage";
-import { PropertyFormPage } from "@/features/properties/PropertyFormPage";
-import { AnalysisWizardPage } from "@/features/analysis/AnalysisWizardPage";
-import { RotationComparisonPage } from "@/features/rotations/RotationComparisonPage";
-import { HistoryPage } from "@/features/history/HistoryPage";
-import { SettingsPage } from "@/features/settings/SettingsPage";
-import { EnvironmentalMapPage } from "@/features/environmental-map/EnvironmentalMapPage";
 import { EmptyState } from "@/components/shared";
 import { buttonVariants } from "@/components/ui/button";
-import { Compass } from "lucide-react";
+import { Compass, Loader2 } from "lucide-react";
 
 function NotFound() {
   return (
@@ -28,20 +19,49 @@ function NotFound() {
   );
 }
 
+/** Primeira carga, enquanto o código da tela chega (cada tela é baixada só quando usada). */
+function LoadingScreen() {
+  return (
+    <div role="status" className="flex min-h-[60vh] items-center justify-center gap-2 text-sm text-muted-foreground">
+      <Loader2 className="size-5 animate-spin text-primary" aria-hidden /> Carregando…
+    </div>
+  );
+}
+
+/** Falha ao baixar o código de uma tela (sem internet ou versão nova publicada). */
+function RouteError() {
+  return (
+    <div className="mx-auto max-w-md p-6">
+      <EmptyState
+        icon={<Compass />}
+        title="Não foi possível abrir esta tela"
+        description="Verifique a internet e tente de novo. Seus dados salvos não foram afetados."
+        action={
+          <button type="button" onClick={() => window.location.reload()} className={buttonVariants()}>
+            Tentar de novo
+          </button>
+        }
+      />
+    </div>
+  );
+}
+
 const router = createBrowserRouter([
   {
     element: <AppLayout />,
+    HydrateFallback: LoadingScreen,
+    errorElement: <RouteError />,
     children: [
-      { path: "/", element: <DashboardPage /> },
-      { path: "/clima", element: <ClimatePage /> },
-      { path: "/mapa", element: <EnvironmentalMapPage /> },
-      { path: "/propriedades", element: <PropertiesPage /> },
-      { path: "/propriedades/nova", element: <PropertyFormPage /> },
-      { path: "/propriedades/:id/editar", element: <PropertyFormPage /> },
-      { path: "/analise", element: <AnalysisWizardPage /> },
-      { path: "/analise/:id", element: <RotationComparisonPage /> },
-      { path: "/historico", element: <HistoryPage /> },
-      { path: "/configuracoes", element: <SettingsPage /> },
+      { path: "/", lazy: () => import("@/features/dashboard/DashboardPage").then((m) => ({ Component: m.DashboardPage })) },
+      { path: "/clima", lazy: () => import("@/features/dashboard/ClimatePage").then((m) => ({ Component: m.ClimatePage })) },
+      { path: "/mapa", lazy: () => import("@/features/environmental-map/EnvironmentalMapPage").then((m) => ({ Component: m.EnvironmentalMapPage })) },
+      { path: "/propriedades", lazy: () => import("@/features/properties/PropertiesPage").then((m) => ({ Component: m.PropertiesPage })) },
+      { path: "/propriedades/nova", lazy: () => import("@/features/properties/PropertyFormPage").then((m) => ({ Component: m.PropertyFormPage })) },
+      { path: "/propriedades/:id/editar", lazy: () => import("@/features/properties/PropertyFormPage").then((m) => ({ Component: m.PropertyFormPage })) },
+      { path: "/analise", lazy: () => import("@/features/analysis/AnalysisWizardPage").then((m) => ({ Component: m.AnalysisWizardPage })) },
+      { path: "/analise/:id", lazy: () => import("@/features/rotations/RotationComparisonPage").then((m) => ({ Component: m.RotationComparisonPage })) },
+      { path: "/historico", lazy: () => import("@/features/history/HistoryPage").then((m) => ({ Component: m.HistoryPage })) },
+      { path: "/configuracoes", lazy: () => import("@/features/settings/SettingsPage").then((m) => ({ Component: m.SettingsPage })) },
       { path: "*", element: <NotFound /> },
     ],
   },
