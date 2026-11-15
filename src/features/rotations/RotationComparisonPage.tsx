@@ -34,12 +34,9 @@ export function RotationComparisonPage() {
   const original = useAppStore((s) => s.analyses.find((a) => a.id === analysis?.recalculatedFrom));
   const navigate = useNavigate();
   const [confirm, setConfirm] = useState(false);
-  const [showSoil, setShowSoil] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
-  const [showParams, setShowParams] = useState(false);
-  const [showMethod, setShowMethod] = useState(false);
-  const [showZarc, setShowZarc] = useState(false);
-  const [showEcon, setShowEcon] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [tab, setTab] = useState<DetailTab>("precos");
   const userEcon = useAppStore((s) => s.settings.economics);
   const basis = useAppStore((s) => s.settings.priceBasis ?? "hoje");
   const updateSettings = useAppStore((s) => s.updateSettings);
@@ -98,6 +95,9 @@ export function RotationComparisonPage() {
   const { climate, input, propertySnapshot: prop } = analysis;
   const usedCrops = [...new Set(scenarios.flatMap((s) => s.sequence))].filter((c) => CROP_MAP[c]);
   const baseline = scenarios.find((s) => s.key === "atual")?.economics?.netPerYear;
+  /** Sugestão: maior lucro descontando o risco (média entre ano normal e ano ruim). */
+  const riskAdjusted = (s: ScenarioResult) => (s.economics ? (s.economics.netPerYear + s.economics.badYearNet) / 2 : -Infinity);
+  const recommended = scenarios.filter((s) => s.key !== "atual" && s.economics).sort((a, b) => riskAdjusted(b) - riskAdjusted(a))[0];
   // dados da propriedade (inclusive solo e laudos, salvos junto) mudaram depois desta análise
   const stale = !!property && property.updatedAt > analysis.createdAt;
 
@@ -187,10 +187,30 @@ export function RotationComparisonPage() {
         </Callout>
       )}
 
+      {recommended && (
+        <div className="mb-4 flex flex-col gap-1 rounded-lg border border-primary/30 bg-primary-soft px-4 py-3 text-primary-soft-foreground sm:flex-row sm:items-center sm:gap-3">
+          <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary-foreground">Sugestão</span>
+          <span className="text-sm">
+            <strong>{recommended.label}</strong>: {sequenceLabel(recommended.sequence)}
+            <span className="text-xs opacity-80">
+              {" "}
+              · melhor lucro descontando o risco de ano ruim
+              {baseline !== undefined && recommended.economics && Math.round(recommended.economics.netPerYear - baseline) !== 0 && (
+                <>
+                  {" "}
+                  · {recommended.economics.netPerYear > baseline ? "+" : "−"}R$ {fmt.n0(Math.abs(Math.round(recommended.economics.netPerYear - baseline)))}/ha·ano vs atual
+                </>
+              )}
+            </span>
+          </span>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
         {[...scenarios.slice(1), scenarios[0]].map((s) => (
           <CriterionCard
             key={s.key}
+            recommended={s.key === recommended?.key}
             scenario={s}
             baseline={s.key === "atual" ? undefined : baseline}
             areaHa={prop.areaHa}
@@ -213,13 +233,36 @@ export function RotationComparisonPage() {
         </span>
       </p>
 
-      <div className="mt-6 flex flex-col gap-3">
-        <Collapsible
-          title="Preços, produtividade e custos"
-          open={showEcon}
-          onToggle={() => setShowEcon((v) => !v)}
-          aside={userEcon && Object.keys(userEcon).length ? <span className="text-xs text-primary">Com seus valores</span> : <span className="text-xs text-muted-foreground">Mercado + referência</span>}
-        >
+      <button
+        type="button"
+        onClick={() => setShowDetails((v) => !v)}
+        aria-expanded={showDetails}
+        className="mt-5 flex cursor-pointer items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+      >
+        Detalhes da análise <ChevronDown className={cn("size-4 transition-transform", showDetails && "rotate-180")} />
+      </button>
+
+      {showDetails && (
+        <Card className="animate-in mt-3">
+          <div role="tablist" className="flex gap-1 overflow-x-auto border-b border-border px-3">
+            {DETAIL_TABS.filter((t) => (t.key !== "solo" || input.soilEvidence) && (t.key !== "zarc" || analysis.zarc)).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.key}
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  "-mb-px shrink-0 cursor-pointer border-b-2 px-3 py-3 text-sm font-medium transition-colors",
+                  tab === t.key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="px-5 py-4">
+        {tab === "precos" && (
           <EconomicsEditor
             cropIds={[...new Set(scenarios.flatMap((s) => s.sequence.map((id, i) => econKey(id, i))))].filter((k) => REFERENCE_ECONOMICS[k])}
             overrides={userEcon ?? {}}
@@ -233,9 +276,13 @@ export function RotationComparisonPage() {
             }}
             onChange={(next) => updateSettings({ economics: next })}
           />
-        </Collapsible>
+        )}
 
-        <Collapsible title="Parâmetros usados" open={showParams} onToggle={() => setShowParams((v) => !v)} aside={<DataOriginBadge origin={climate.origin} />}>
+        {tab === "parametros" && (
+          <>
+          <div className="mb-3 flex justify-end">
+            <DataOriginBadge origin={climate.origin} />
+          </div>
           <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <KeyValue label="Rotação atual">
               {cropName(input.currentRotation.verao)} → {cropName(input.currentRotation.inverno)}
@@ -255,31 +302,27 @@ export function RotationComparisonPage() {
           <p className="mt-3 text-xs text-muted-foreground">
             Clima observado de {formatDate(climate.periodStart)} a {formatDate(climate.periodEnd)} (NASA POWER). Verão = out–mar; inverno = abr–set. Não é previsão.
           </p>
-        </Collapsible>
+          </>
+        )}
 
-        {input.soilEvidence && (
-          <Collapsible
-            title="Solo considerado"
-            open={showSoil}
-            onToggle={() => setShowSoil((v) => !v)}
-            aside={<span className="hidden text-xs text-muted-foreground sm:inline">{LEVEL_LABEL[input.soilEvidence.level].title}</span>}
-          >
+        {tab === "solo" && input.soilEvidence && (
+          <>
+            <p className="mb-3 text-xs text-muted-foreground">{LEVEL_LABEL[input.soilEvidence.level].title}</p>
             <SoilEvidenceSummary evidence={input.soilEvidence} propertyId={property ? analysis.propertyId : undefined} />
-          </Collapsible>
+          </>
         )}
 
-        {analysis.zarc && (
-          <Collapsible
-            title="Calendário de plantio (ZARC)"
-            open={showZarc}
-            onToggle={() => setShowZarc((v) => !v)}
-            aside={<DataOriginBadge origin={analysis.zarc.origin} title={ZARC_ORIGIN_TITLE} />}
-          >
+        {tab === "zarc" && analysis.zarc && (
+          <>
+            <div className="mb-3 flex justify-end">
+              <DataOriginBadge origin={analysis.zarc.origin} title={ZARC_ORIGIN_TITLE} />
+            </div>
             <ZarcRotationCalendar zarc={analysis.zarc} cropIds={usedCrops} />
-          </Collapsible>
+          </>
         )}
 
-        <Collapsible title="Como os índices são calculados" open={showMethod} onToggle={() => setShowMethod((v) => !v)}>
+        {tab === "metodo" && (
+          <>
           <div className="grid grid-cols-1 gap-x-8 gap-y-4 md:grid-cols-2">
             {[...ECON_METHOD, ...METHOD_NOTES].map((n) => (
               <div key={n.title}>
@@ -313,8 +356,11 @@ export function RotationComparisonPage() {
             </table>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">Motor de regras {analysis.engineVersion}.</p>
-        </Collapsible>
-      </div>
+          </>
+        )}
+          </div>
+        </Card>
+      )}
 
       <ConfirmDialog
         open={confirm}
@@ -331,7 +377,11 @@ export function RotationComparisonPage() {
   );
 }
 
-type MarketState = { data: MarketData | null; loading: boolean; error: string | null; reload: () => void };
+/** "Soja → Milho · Soja → Trigo" (ano 1 · ano 2), sem repetir anual. */
+const sequenceLabel = (seq: string[]) =>
+  [seq.slice(0, 2), seq.slice(2, 4)].map(([a, b]) => (a === b ? cropName(a) : `${cropName(a)} → ${CROP_MAP[b] ? cropName(b) : "pousio"}`)).join(" · ");
+
+type MarketState ={ data: MarketData | null; loading: boolean; error: string | null; reload: () => void };
 
 /** Cotações do dia (CEPEA) + projeção para a colheita, com cache de algumas horas. */
 function useMarket(): MarketState {
@@ -550,17 +600,11 @@ function NumCell({ value, edited, suffix, decimals = 0, onCommit }: { value: num
   );
 }
 
-function Collapsible({ title, open, onToggle, aside, children }: { title: string; open: boolean; onToggle: () => void; aside?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <Card>
-      <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full cursor-pointer items-center justify-between gap-3 px-5 py-4 text-left">
-        <span className="font-semibold">{title}</span>
-        <span className="flex items-center gap-2">
-          {aside}
-          <ChevronDown className={cn("size-5 text-muted-foreground transition-transform", open && "rotate-180")} />
-        </span>
-      </button>
-      {open && <div className="animate-in border-t border-border px-5 py-4">{children}</div>}
-    </Card>
-  );
-}
+type DetailTab = "precos" | "parametros" | "solo" | "zarc" | "metodo";
+const DETAIL_TABS: { key: DetailTab; label: string }[] = [
+  { key: "precos", label: "Preços e custos" },
+  { key: "parametros", label: "Parâmetros" },
+  { key: "solo", label: "Solo" },
+  { key: "zarc", label: "Calendário ZARC" },
+  { key: "metodo", label: "Como calculamos" },
+];

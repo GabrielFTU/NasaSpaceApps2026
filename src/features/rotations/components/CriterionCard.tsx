@@ -33,6 +33,8 @@ interface Props {
   /** Ranking do critério (o card mostra as que não estão em uso). */
   alternatives?: Candidate[];
   onPick?: (seq: Sequence) => void;
+  /** Rotação apontada como sugestão entre os critérios. */
+  recommended?: boolean;
 }
 
 const SLOT_SHORT = ["V1", "I1", "V2", "I2"];
@@ -43,7 +45,7 @@ const shortSeq = (seq: string[]) =>
     .map(([a, b]) => (a === b ? cropName(a) : `${cropName(a)} → ${b === FALLOW_ID ? "pousio" : cropName(b)}`))
     .join(" · ");
 
-export function CriterionCard({ scenario: s, baseline, areaHa, edited, onReplace, onReset, alternatives, onPick }: Props) {
+export function CriterionCard({ scenario: s, baseline, areaHa, edited, onReplace, onReset, alternatives, onPick, recommended }: Props) {
   const [open, setOpen] = useState(false);
   const m = s.economics!;
   const lvl = instabilityLevel(m.instability);
@@ -52,7 +54,17 @@ export function CriterionCard({ scenario: s, baseline, areaHa, edited, onReplace
   const isCurrent = s.key === "atual";
 
   return (
-    <article className={cn("flex flex-col rounded-lg border bg-surface p-5", isCurrent ? "border-dashed border-input" : "border-border shadow-card")}>
+    <article
+      className={cn(
+        "relative flex flex-col rounded-lg border bg-surface p-5",
+        isCurrent ? "border-dashed border-input" : recommended ? "border-primary shadow-card ring-1 ring-primary" : "border-border shadow-card",
+      )}
+    >
+      {recommended && (
+        <span className="absolute -top-2.5 left-5 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
+          Sugestão
+        </span>
+      )}
       {/* Critério */}
       <header className="flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -188,9 +200,9 @@ export function CriterionCard({ scenario: s, baseline, areaHa, edited, onReplace
                     type="button"
                     onClick={() => onPick?.(a.seq)}
                     title="Usar esta rotação no cartão"
-                    className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-xs transition-colors hover:bg-muted"
+                    className="flex w-full cursor-pointer items-start gap-2 rounded-md px-1.5 py-1 text-left text-xs leading-snug transition-colors hover:bg-muted"
                   >
-                    <span className="min-w-0 flex-1 truncate">{shortSeq(a.seq)}</span>
+                    <span className="min-w-0 flex-1 break-words">{shortSeq(a.seq)}</span>
                     <span className="tabular shrink-0 font-medium">{brlCompact(a.net)}</span>
                     <span className={cn("tabular w-6 shrink-0 text-right text-[11px]", TONE[instabilityLevel(a.inst).tone])}>{a.inst}</span>
                   </button>
