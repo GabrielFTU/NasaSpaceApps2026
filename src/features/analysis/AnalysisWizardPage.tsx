@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, CalendarRange, FlaskConical, MapPinned, Search, Sprout } from "lucide-react";
 import { useZarc } from "@/features/zarc/useZarc";
@@ -9,13 +9,27 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckboxCard, Field, Input, Select } from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
-import { Callout } from "@/components/ui/misc";
+import { Callout, Segmented } from "@/components/ui/misc";
 import { toast } from "@/components/ui/toast";
 import { CROPS, CROP_GROUP_LABEL, CROP_MAP, DRAINAGE_LABEL, FALLOW_ID, PRIORITY_LABEL, SOIL_TEXTURE_LABEL, cropName } from "@/data/crops";
 import { fmt } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { Crop, CropGroup, Priorities, PriorityKey, SoilProfile, ZarcSeason } from "@/types";
+import type { Crop, CropGroup, Priorities, PriorityKey, Property, SoilProfile, ZarcSeason } from "@/types";
 import { Stepper } from "./components/Stepper";
+import { AnalysisChat } from "./components/AnalysisChat";
+import { buildAnalysisContext } from "./chatContext";
+import {
+  ANALYSIS_TOOLS,
+  CONVERSATION_GUIDE,
+  EMPTY_CONV,
+  describeState,
+  inputFromState,
+  readiness,
+  type AnalysisActions,
+  type ConvState,
+  type GenerateInput,
+} from "./conversation/tools";
+import { ConversationSummary } from "./components/ConversationSummary";
 import { runAnalysis } from "./runAnalysis";
 import { deriveSoilEvidence, effectiveSoilProfile } from "@/features/soil/model";
 import { SoilEvidenceSummary } from "@/features/soil/SoilEvidenceSummary";
@@ -47,6 +61,17 @@ export function AnalysisWizardPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"conversa" | "formulario">("conversa");
+  // memória estruturada do modo conversa; com uma propriedade só, ela já começa escolhida
+  const [conv, setConv] = useState<ConvState>(() => {
+    if (properties.length !== 1) return EMPTY_CONV;
+    const p = properties[0];
+    const ev = deriveSoilEvidence(p, soilSamples);
+    return { ...EMPTY_CONV, propertyId: p.id, propertyConfirmed: true, soil: effectiveSoilProfile(p.soil, ev), soilSource: soilSamples.some((s) => s.propertyId === p.id && s.status !== "rascunho") ? "laudo" : "cadastro" };
+  });
+  // cópia síncrona: as ferramentas leem e escrevem aqui dentro da mesma resposta, antes do React renderizar
+  const convRef = useRef(conv);
+  convRef.current = conv;
 
   const property = properties.find((p) => p.id === propertyId) ?? null;
 
@@ -101,7 +126,7 @@ export function AnalysisWizardPage() {
         <EmptyState
           icon={<MapPinned />}
           title="Cadastre uma propriedade primeiro"
-          description="A análise usa a localização e o solo da propriedade para comparar rotações."
+          description="A análise usa local e solo da área."
           action={
             <Link to="/propriedades/nova" className={buttonVariants()}>
               Cadastrar propriedade
@@ -161,34 +186,140 @@ export function AnalysisWizardPage() {
     if (on && interest.length >= MAX_INTEREST) toast.info(`Limite de ${MAX_INTEREST} culturas`, "Remova uma cultura para adicionar outra.");
   };
 
-  const generate = async () => {
-    if (!property || !soil) return;
+  /** Perfil de solo efetivo (laudo > cadastro) de uma propriedade. */
+  const soilOf = (p: Property) => effectiveSoilProfile(p.soil, deriveSoilEvidence(p, soilSamples));
+
+  const soilSourceOf = (p: Property): "cadastro" | "laudo" => (soilSamples.some((s) => s.propertyId === p.id && s.status !== "rascunho") ? "laudo" : "cadastro");
+
+  /** Gera a comparação. Devolve um texto de resultado (também usado pelo assistente). */
+  const generateWith = async (d: GenerateInput): Promise<string> => {
+    const prop = properties.find((p) => p.id === d.propertyId);
+    if (!prop) return "Nenhuma propriedade selecionada.";
+    if (!d.interest.length) return "Escolha ao menos uma cultura de interesse antes de gerar.";
+    if (Object.values(d.priorities).every((v) => v === 0)) return "Defina ao menos uma prioridade antes de gerar.";
     setGenerating(true);
     setGenError(null);
     try {
       const analysis = await runAnalysis({
-        property,
+        property: prop,
         samples: soilSamples,
-        currentRotation: { verao: currentVerao, inverno: currentInverno },
-        interestCropIds: interest,
-        priorities,
+        currentRotation: { verao: d.verao, inverno: d.inverno },
+        interestCropIds: d.interest,
+        priorities: d.priorities,
         powerMode,
-        soil,
+        soil: d.soil,
       });
       saveAnalysis(analysis);
       toast.success("Comparação gerada", "A análise foi salva no histórico.");
       navigate(`/analise/${analysis.id}`);
+      return "Comparação gerada e aberta para a pessoa.";
     } catch (e) {
-      setGenError(e instanceof Error ? e.message : "Erro ao gerar a comparação.");
+      const msg = e instanceof Error ? e.message : "Erro ao gerar a comparação.";
+      setGenError(msg);
+      return `Falhou ao gerar: ${msg}`;
     } finally {
       setGenerating(false);
     }
   };
 
+  /** Botão do formulário: gera com o que está nos campos. */
+  const generate = () =>
+    property && soil
+      ? generateWith({ propertyId: property.id, verao: currentVerao, inverno: currentInverno, interest, soil, priorities })
+      : Promise.resolve("Selecione a propriedade.");
+
+  const interestOptions = CROPS.filter((c) => c.role === "comercial");
+
+  /** Grava o estado da conversa e espelha no formulário o que é do catálogo (para "Revisar no formulário"). */
+  const setConvState = (next: ConvState) => {
+    convRef.current = next;
+    setConv(next);
+    if (next.propertyId) setPropertyId(next.propertyId);
+    if (next.verao?.id) setCurrentVerao(next.verao.id);
+    if (next.inverno?.id) setCurrentInverno(next.inverno.id);
+    const ids = next.candidates.filter((c) => c.id).map((c) => c.id!);
+    if (ids.length) setInterest(ids.slice(0, MAX_INTEREST));
+    if (next.soil) {
+      setSoil(next.soil);
+      setPhText(next.soil.ph === null ? "" : String(next.soil.ph).replace(".", ","));
+      setMoText(next.soil.organicMatter === null ? "" : String(next.soil.organicMatter).replace(".", ","));
+    }
+    if (next.priorities) setPriorities(next.priorities);
+  };
+
+  /** O que o assistente pode fazer (modo conversa). */
+  const actions: AnalysisActions = {
+    maxInterest: MAX_INTEREST,
+    properties,
+    summerIds: summerOptions.map((c) => c.id),
+    winterIds: winterOptions.map((c) => c.id),
+    interestIds: interestOptions.map((c) => c.id),
+    get: () => convRef.current,
+    set: setConvState,
+    soilOf: (p) => ({ soil: soilOf(p), source: soilSourceOf(p) }),
+    generate: generateWith,
+  };
+
+  const convProperty = properties.find((p) => p.id === conv.propertyId) ?? null;
+  const greeting =
+    properties.length === 1
+      ? `Olá! 🌱 Vou te ajudar a comparar opções para o próximo plantio no **${properties[0].name}** (${properties[0].city}/${properties[0].state}).\n\nMe conta: o que você costuma plantar nessa área ao longo do ano?`
+      : `Olá! 🌱 Vou te ajudar a comparar opções para o próximo plantio.\n\nVi que você tem ${properties.length} propriedades cadastradas: ${properties.map((p) => `**${p.name}**`).join(", ")}. Qual delas vamos analisar?`;
+
   return (
     <>
-      <PageHeader title="Nova análise" />
+      <PageHeader
+        title="Nova análise"
+        actions={
+          <Segmented
+            aria-label="Como montar a análise"
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: "conversa", label: "Conversando" },
+              { value: "formulario", label: "Formulário" },
+            ]}
+          />
+        }
+      />
 
+      {mode === "conversa" ? (
+        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <AnalysisChat
+            variant="inline"
+            context={buildAnalysisContext({
+              step: "conversa",
+              catalog: { properties, verao: summerOptions, inverno: winterOptions, interesse: interestOptions },
+              conversationState: describeState(conv, properties),
+              zarcCropIds: [conv.verao?.id, conv.inverno?.id, ...conv.candidates.map((c) => c.id)].filter((x): x is string => !!x),
+              property: convProperty,
+              soil: conv.soil,
+              currentVerao,
+              currentInverno,
+              interest,
+              priorities,
+              zarc,
+            })}
+            conversation={{
+              tools: ANALYSIS_TOOLS,
+              guide: CONVERSATION_GUIDE,
+              actions,
+              greeting,
+              initialWidget: properties.length > 1 ? { kind: "properties", ids: properties.map((p) => p.id) } : undefined,
+            }}
+          />
+          <ConversationSummary
+            state={conv}
+            property={convProperty}
+            readiness={readiness(conv)}
+            generating={generating}
+            error={genError}
+            onGenerate={() => void generateWith(inputFromState(conv, MAX_INTEREST))}
+            onEdit={() => setMode("formulario")}
+          />
+        </div>
+      ) : (
+      <>
       <div className="mb-5">
         <Stepper steps={STEPS} current={step} onSelect={(i) => setStep(i)} />
       </div>
@@ -459,13 +590,28 @@ export function AnalysisWizardPage() {
               Continuar <ArrowRight />
             </Button>
           ) : (
-            <Button onClick={generate} loading={generating}>
+            <Button onClick={() => void generate()} loading={generating}>
               {!generating && <Sprout />}
               {generating ? "Gerando comparação…" : "Gerar comparação"}
             </Button>
           )}
         </CardFooter>
       </Card>
+
+      <AnalysisChat
+        context={buildAnalysisContext({
+          step: STEPS[step],
+          property,
+          soil,
+          currentVerao,
+          currentInverno,
+          interest,
+          priorities,
+          zarc,
+        })}
+      />
+      </>
+      )}
     </>
   );
 }

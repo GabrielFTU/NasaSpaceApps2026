@@ -9,10 +9,11 @@ import type {
   SlotEvaluation,
   ZarcResult,
 } from "@/types";
-import { CROP_MAP, FALLOW_ID, CROPS, cropName, PRIORITY_LABEL } from "@/data/crops";
+import { CROP_MAP, FALLOW_ID, CROPS, cropName } from "@/data/crops";
 import { clamp, round } from "@/lib/utils";
 import { fmt } from "@/lib/format";
 import { ZARC_CROPS, windowLabel, zarcKey } from "@/services/zarc";
+import { scenarioEconomics, sequenceDifficulty, type Difficulty, type EconOverrides } from "./economics";
 
 /**
  * MOTOR DE REGRAS DEMONSTRATIVO — rotações de culturas
@@ -319,28 +320,23 @@ function describe(seq: Sequence, slots: SlotEvaluation[], indicators: Record<Pri
   const limitations: string[] = [];
   const crops = seq.map(crop);
 
-  if (!seq.includes(FALLOW_ID)) benefits.push("Solo permanece coberto nas quatro estações.");
-  if (crops.some((c) => c?.role === "cobertura")) benefits.push("Inclui planta de cobertura, que aumenta a palhada sobre o solo.");
-  if (crops.some((c) => c?.fixesNitrogen)) benefits.push("Inclui leguminosa, que pode contribuir com nitrogênio para a cultura seguinte.");
-  if (new Set(seq.filter((s) => s !== FALLOW_ID)).size >= 3) benefits.push("Alterna três ou mais culturas, quebrando ciclos de pragas e doenças.");
-  if (input.soil.compaction && seq.some((id) => DEEP_ROOTS.includes(id))) benefits.push("Usa espécies de raiz agressiva em área com sinais de compactação.");
-  if (indicators.agua >= 80) benefits.push("Volume de chuva da última safra cobriu as necessidades de referência das culturas.");
+  // rótulos curtos e técnicos (aparecem como etiquetas no cartão)
+  if (!seq.includes(FALLOW_ID)) benefits.push("Solo coberto o ano todo");
+  if (crops.some((c) => c?.role === "cobertura")) benefits.push("Cobertura: + palhada");
+  if (crops.some((c) => c?.fixesNitrogen)) benefits.push("Leguminosa: aporte de N");
+  if (new Set(seq.filter((s) => s !== FALLOW_ID)).size >= 3) benefits.push("3+ culturas: quebra ciclo de pragas");
+  if (input.soil.compaction && seq.some((id) => DEEP_ROOTS.includes(id))) benefits.push("Raiz agressiva x compactação");
+  if (indicators.agua >= 80) benefits.push("Chuva ≥ necessidade");
 
-  if (seq.includes(FALLOW_ID)) limitations.push("Pousio deixa o solo exposto à erosão e sem palhada.");
-  if (seq[0] === seq[2] && crops[0] && !crops[0].annual) limitations.push(`${cropName(seq[0])} repetida no verão dos dois anos.`);
-  if (crops.some((c) => c?.annual) && (input.soil.texture === "arenosa" || input.soil.erosionHistory))
-    limitations.push("Mandioca expõe o solo no início do ciclo; exige práticas de contenção de erosão.");
-  if (![1, 3].some((i) => crops[i]?.role === "comercial" && !crops[i]?.annual))
-    limitations.push("Sem cultura comercial no inverno: a renda depende apenas da safra de verão.");
-  slots
-    .filter((s) => s.zarc && !s.zarc.zoned)
-    .forEach((s) => limitations.push(`${s.slot} — ${cropName(s.cropId)}: fora do ZARC no município (sem Proagro e seguro subvencionado).`));
-  slots
-    .filter((s) => s.compatibility === "baixa")
-    .forEach((s) => limitations.push(`${s.slot} — ${cropName(s.cropId)}: compatibilidade baixa com as condições informadas.`));
-  if (indicators.agua < 60) limitations.push("Chuva observada abaixo da referência em parte das posições; maior risco de déficit hídrico.");
+  if (seq.includes(FALLOW_ID)) limitations.push("Pousio: solo exposto");
+  if (seq[0] === seq[2] && crops[0] && !crops[0].annual) limitations.push(`${cropName(seq[0])} repetida no verão`);
+  if (crops.some((c) => c?.annual) && (input.soil.texture === "arenosa" || input.soil.erosionHistory)) limitations.push("Mandioca: risco de erosão no início");
+  if (![1, 3].some((i) => crops[i]?.role === "comercial" && !crops[i]?.annual)) limitations.push("Sem renda no inverno");
+  slots.filter((s) => s.zarc && !s.zarc.zoned).forEach((s) => limitations.push(`${cropName(s.cropId)} fora do ZARC (sem seguro)`));
+  slots.filter((s) => s.compatibility === "baixa").forEach((s) => limitations.push(`${cropName(s.cropId)}: compatibilidade baixa`));
+  if (indicators.agua < 60) limitations.push("Risco de déficit hídrico");
   const v = input.soilEvidence?.baseSaturation;
-  if (v && v.value < LOW_V_PCT) limitations.push(`Saturação por bases de ${fmt.n0(v.value)}% no laudo: avaliar calagem conforme a recomendação regional.`);
+  if (v && v.value < LOW_V_PCT) limitations.push(`V% ${fmt.n0(v.value)}: avaliar calagem`);
 
   return { benefits: [...new Set(benefits)], limitations: [...new Set(limitations)] };
 }
@@ -349,10 +345,41 @@ function describe(seq: Sequence, slots: SlotEvaluation[], indicators: Record<Pri
 /* Geração de cenários                                               */
 /* ---------------------------------------------------------------- */
 
-function buildScenario(key: ScenarioResult["key"], label: string, focus: string, seq: Sequence, input: AnalysisInput, climate: ClimateSummary, zarc?: ZarcResult): ScenarioResult {
+export function buildScenario(
+  key: ScenarioResult["key"],
+  label: string,
+  focus: string,
+  seq: Sequence,
+  input: AnalysisInput,
+  climate: ClimateSummary,
+  zarc?: ZarcResult,
+  econ?: EconOverrides,
+): ScenarioResult {
   const s = scoreSequence(seq, input, climate, zarc);
   const d = describe(seq, s.slots, s.indicators, input);
-  return { key, label, focus, sequence: seq, ...s, ...d };
+  return { key, label, focus, sequence: seq, ...s, ...d, economics: scenarioEconomics(seq, s.slots, econ) };
+}
+
+export type { Sequence };
+
+/** Culturas que podem ocupar uma posição (verão ou inverno), para a troca manual. */
+export function slotOptions(slot: number): string[] {
+  const season = isSummerSlot(slot) ? "verao" : "inverno";
+  return [...CROPS.filter((c) => !c.annual && c.seasons.includes(season)).map((c) => c.id), FALLOW_ID];
+}
+
+/** Troca a cultura de uma posição, mantendo coerente a cultura anual (ocupa verão + inverno do ano). */
+export function replaceSlot(seq: Sequence, slot: number, id: string): Sequence {
+  const next = [...seq] as Sequence;
+  const pair = slot % 2 === 0 ? slot + 1 : slot - 1;
+  if (crop(id)?.annual) {
+    next[slot] = id;
+    next[pair] = id;
+  } else {
+    if (crop(next[slot])?.annual && next[pair] === next[slot]) next[pair] = FALLOW_ID;
+    next[slot] = id;
+  }
+  return next;
 }
 
 function yearOptions(input: AnalysisInput): [string, string][] {
@@ -377,50 +404,93 @@ function yearOptions(input: AnalysisInput): [string, string][] {
 
 const diffCount = (a: string[], b: string[]) => a.reduce((n, v, i) => n + (v !== b[i] ? 1 : 0), 0);
 
-function topIndicator(ind: Record<PriorityKey, number>): string {
-  const k = (Object.keys(ind) as PriorityKey[]).sort((a, b) => ind[b] - ind[a])[0];
-  return PRIORITY_LABEL[k];
+export type CriterionKey = "retorno" | "estavel" | "equilibrio";
+
+export const CRITERIA: Record<CriterionKey, { label: string; focus: string }> = {
+  retorno: { label: "Mais rentável", focus: "Maior lucro por hectare" },
+  estavel: { label: "Mais estável", focus: "Renda mais previsível ano a ano" },
+  equilibrio: { label: "Risco moderado", focus: "Bom lucro com oscilação média" },
+};
+
+export interface Candidate {
+  seq: Sequence;
+  net: number;
+  inst: number;
+  difficulty: Difficulty;
+  overall: number;
+  tie: number;
 }
 
-export function generateComparison(input: AnalysisInput, climate: ClimateSummary, zarc?: ZarcResult): ScenarioResult[] {
-  const current: Sequence = [input.currentRotation.verao, input.currentRotation.inverno, input.currentRotation.verao, input.currentRotation.inverno];
-  const currentScenario = buildScenario("atual", "Rotação atual", "Sequência praticada hoje", current, input, climate, zarc);
+/** Faixa de instabilidade considerada "moderada". */
+const MODERATE: [number, number] = [40, 60];
+const RANK_SIZE = 4;
 
+/**
+ * Ranking dos três critérios entre todas as sequências possíveis, só com culturas de manejo até
+ * `maxDifficulty`. Cada lista vem da melhor para a pior (até 4 opções).
+ */
+export function rankCriteria(input: AnalysisInput, climate: ClimateSummary, zarc?: ZarcResult, econ?: EconOverrides, maxDifficulty: Difficulty = 3): Record<CriterionKey, Candidate[]> {
+  const current: Sequence = [input.currentRotation.verao, input.currentRotation.inverno, input.currentRotation.verao, input.currentRotation.inverno];
   const years = yearOptions(input);
-  const candidates: { seq: Sequence; overall: number; tie: number }[] = [];
+  const cands: Candidate[] = [];
   for (const y1 of years) {
     for (const y2 of years) {
       const seq: Sequence = [y1[0], y1[1], y2[0], y2[1]];
       if (diffCount(seq, current) === 0) continue;
+      const difficulty = sequenceDifficulty(seq).level;
+      if (difficulty > maxDifficulty) continue;
       const s = scoreSequence(seq, input, climate, zarc);
+      const m = scenarioEconomics(seq, s.slots, econ);
       // desempate determinístico: favorece mais culturas de interesse
       const tie = seq.filter((id) => input.interestCropIds.includes(id)).length;
-      candidates.push({ seq, overall: s.overall, tie });
+      cands.push({ seq, net: m.netPerYear, inst: m.instability, difficulty, overall: s.overall, tie });
     }
   }
-  candidates.sort((a, b) => b.overall - a.overall || b.tie - a.tie || a.seq.join().localeCompare(b.seq.join()));
+  if (!cands.length) return { retorno: [], estavel: [], equilibrio: [] };
 
-  const a = candidates[0];
-  // B precisa trazer um conjunto de culturas comerciais diferente da A (não apenas trocar posições)
-  const commercialKey = (seq: Sequence) =>
-    [...new Set(seq.filter((id) => crop(id)?.role === "comercial"))].sort().join(",");
-  const b =
-    (a && candidates.find((c) => commercialKey(c.seq) !== commercialKey(a.seq) && diffCount(c.seq, a.seq) >= 2)) ??
-    candidates.find((c) => a && diffCount(c.seq, a.seq) >= 2) ??
-    candidates[1];
+  /** Mesma rotação com os anos trocados (soja→milho · milho→milho = milho→milho · soja→milho). */
+  const canon = (s: Sequence) => [`${s[0]}>${s[1]}`, `${s[2]}>${s[3]}`].sort().join("|");
+  const fallows = (c: Candidate) => c.seq.filter((id) => id === FALLOW_ID).length;
+  const byKey = (a: Candidate, b: Candidate) => a.difficulty - b.difficulty || b.overall - a.overall || b.tie - a.tie || a.seq.join().localeCompare(b.seq.join());
+  /** Ordena e tira as versões espelhadas, ficando com a melhor de cada. */
+  const ranked = (list: Candidate[], cmp: (a: Candidate, b: Candidate) => number) => {
+    const seen = new Set<string>();
+    return [...list].sort(cmp).filter((c) => {
+      const k = canon(c.seq);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  };
 
-  const result = [currentScenario];
-  if (a) {
-    const sa = buildScenario("a", "Alternativa A", "", a.seq, input, climate, zarc);
-    sa.focus = `Maior índice ponderado pelas suas prioridades · destaque: ${topIndicator(sa.indicators).toLowerCase()}`;
-    result.push(sa);
-  }
-  if (b) {
-    const sb = buildScenario("b", "Alternativa B", "", b.seq, input, climate, zarc);
-    sb.focus = `Melhor combinação com culturas comerciais diferentes da A · destaque: ${topIndicator(sb.indicators).toLowerCase()}`;
-    result.push(sb);
-  }
-  return result;
+  const retorno = ranked(cands, (a, b) => b.net - a.net || byKey(a, b));
+  const profitable = cands.filter((c) => c.net > 0);
+  // empate na estabilidade: prefere quem não deixa o solo em pousio
+  const estavel = ranked(profitable.length ? profitable : cands, (a, b) => a.inst - b.inst || fallows(a) - fallows(b) || b.net - a.net || byKey(a, b));
+  const inBand = cands.filter((c) => c.inst >= MODERATE[0] && c.inst <= MODERATE[1]);
+  const dist = (c: Candidate) => (c.inst < MODERATE[0] ? MODERATE[0] - c.inst : c.inst > MODERATE[1] ? c.inst - MODERATE[1] : 0);
+  // o risco moderado não repete a 1ª opção dos outros critérios, quando houver alternativa
+  const taken = new Set([canon(retorno[0].seq), canon(estavel[0].seq)]);
+  const modPool = (inBand.length ? inBand : cands).filter((c) => !taken.has(canon(c.seq)));
+  const equilibrio = ranked(modPool.length ? modPool : inBand.length ? inBand : cands, (a, b) => dist(a) - dist(b) || b.net - a.net || byKey(a, b));
+
+  return { retorno: retorno.slice(0, RANK_SIZE), estavel: estavel.slice(0, RANK_SIZE), equilibrio: equilibrio.slice(0, RANK_SIZE) };
+}
+
+/**
+ * Atual + o 1º de cada critério (mais rentável, mais estável, risco moderado).
+ * `econ` = preços/produtividades/custos em uso.
+ */
+export function generateComparison(input: AnalysisInput, climate: ClimateSummary, zarc?: ZarcResult, econ?: EconOverrides, maxDifficulty: Difficulty = 3): ScenarioResult[] {
+  const current: Sequence = [input.currentRotation.verao, input.currentRotation.inverno, input.currentRotation.verao, input.currentRotation.inverno];
+  const currentScenario = buildScenario("atual", "Rotação atual", "O que é feito hoje", current, input, climate, zarc, econ);
+  const rank = rankCriteria(input, climate, zarc, econ, maxDifficulty);
+  return [
+    currentScenario,
+    ...(Object.keys(CRITERIA) as CriterionKey[])
+      .filter((k) => rank[k][0])
+      .map((k) => buildScenario(k, CRITERIA[k].label, CRITERIA[k].focus, rank[k][0].seq, input, climate, zarc, econ)),
+  ];
 }
 
 /** Texto explicativo da metodologia, exibido na tela de comparação. */
@@ -452,9 +522,5 @@ export const METHOD_NOTES: { title: string; body: string }[] = [
   {
     title: "Zoneamento Agrícola de Risco Climático (ZARC)",
     body: "Dado oficial do MAPA (Tábua de Risco da safra vigente, sequeiro). Para cada cultura comercial com zoneamento, verifica se o município tem janela de plantio indicada para a classe de solo correspondente à textura informada (arenosa → AD1, média → AD3, argilosa → AD4, muito argilosa → AD6; aproximação). Sem janela indicada, a compatibilidade cai direto para baixa (fora do ZARC não há Proagro nem seguro subvencionado); só com janelas de risco de 40%, conta como uma restrição. Milho, feijão e sorgo no inverno usam o zoneamento de 2ª safra. Para soja, usa o menor nível de manejo (NM) publicado. Plantas de cobertura sem zoneamento não são penalizadas.",
-  },
-  {
-    title: "Escolha das alternativas",
-    body: "O motor combina a cultura de verão atual, as culturas de interesse e plantas de cobertura de inverno em todas as sequências de dois anos possíveis (com ao menos uma cultura comercial por ano). A Alternativa A tem o maior índice ponderado pelos pesos das suas prioridades; a B é a melhor combinação seguinte com um conjunto de culturas comerciais diferente da A (e ao menos duas posições distintas), para oferecer uma alternativa de fato diferente.",
   },
 ];

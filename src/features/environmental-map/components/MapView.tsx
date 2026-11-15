@@ -29,6 +29,10 @@ interface MapViewProps {
   focus: { key: string; points: [number, number][]; center: [number, number] };
   onTileError?: (layerId: string) => void;
   onZoom?: (z: number) => void;
+  /** Pinta a área analisada com a cor do valor (camadas de pixel grosso vistas de perto). */
+  areaTint?: { color: string; label: string; opacity: number } | null;
+  /** Pedido de enquadramento: `region` afasta até `zoom`; `area` volta ao contorno. */
+  view?: { n: number; kind: "region" | "area"; zoom?: number } | null;
 }
 
 const vertexIcon = L.divIcon({ className: "semeia-vertex", iconSize: [14, 14], iconAnchor: [7, 7] });
@@ -40,10 +44,23 @@ export const MapView = memo(function MapView(props: MapViewProps) {
   const drawing = !!draw;
   return (
     <MapContainer maxZoom={MAX_ZOOM} center={focus.center} zoom={15} className="envmap isolate h-full w-full !rounded-none" zoomControl={false}>
-      <ZoomControl position="bottomright" />
+      <ZoomControl position="topleft" />
       <BaseTiles layer={base} labels={base === "satelite"} />
       <Fit focus={focus} />
+      <ViewRequest view={props.view ?? null} focus={focus} />
       <AutoResize />
+      {props.areaTint && !drawing && focus.points.length >= 3 && (
+        <Polygon
+          key={`tint-${focus.key}-${props.areaTint.color}`}
+          positions={focus.points}
+          interactive={false}
+          pathOptions={{ color: "#ffffff", weight: 2, fillColor: props.areaTint.color, fillOpacity: props.areaTint.opacity }}
+        >
+          <Tooltip permanent direction="center" className="envmap-value">
+            {props.areaTint.label}
+          </Tooltip>
+        </Polygon>
+      )}
       <DrawMode active={drawing} />
       {props.onZoom && <ZoomWatcher onZoom={props.onZoom} />}
       {!drawing &&
@@ -168,6 +185,19 @@ function Fit({ focus }: { focus: MapViewProps["focus"] }) {
   return null;
 }
 
+function ViewRequest({ view, focus }: { view: MapViewProps["view"]; focus: MapViewProps["focus"] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!view) return;
+    const center = focus.points.length >= 3 ? L.latLngBounds(focus.points).getCenter() : L.latLng(focus.center);
+    if (view.kind === "region") map.flyTo(center, view.zoom ?? 7, { duration: 0.8 });
+    else if (focus.points.length >= 3) map.flyToBounds(L.latLngBounds(focus.points), { padding: [40, 40], maxZoom: 16, duration: 0.8 });
+    else map.flyTo(center, 14, { duration: 0.8 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view?.n]);
+  return null;
+}
+
 function AutoResize() {
   const map = useMap();
   useEffect(() => {
@@ -222,7 +252,7 @@ function HoverProbe({ layer, date }: { layer: EnvLayer; date: string }) {
   const when = monthly ? formatDate(date, { month: "long", year: "numeric" }) : formatDate(date);
   return (
     <div
-      className="pointer-events-none absolute z-[700] w-max max-w-60 rounded-md border border-border bg-surface/95 px-2.5 py-1.5 text-xs shadow-md backdrop-blur"
+      className="pointer-events-none absolute z-[700] w-max max-w-60 rounded-md glass border px-2.5 py-1.5 text-xs "
       style={{ left: tip.x, top: tip.y - 14, transform: "translate(-50%, -100%)" }}
       role="status"
     >

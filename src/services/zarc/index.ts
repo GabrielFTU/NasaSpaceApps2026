@@ -139,7 +139,20 @@ const soilLabelOf = (profiles: ZarcRiskProfile[], texture: SoilTexture) => {
   return used.length ? used.map((s) => ZARC_SOIL_LABEL[s]).join(" / ") : SOIL_TEXTURE_ZARC_HINT[texture];
 };
 
-type Place = { city: string; state: string };
+export type Place = { city: string; state: string };
+
+export const ZARC_UFS = [
+  "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA",
+  "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO",
+] as const;
+
+/** Municípios zoneados de uma UF (nomes como publicados, em ordem alfabética). */
+export async function listZarcMunicipios(uf: string): Promise<string[]> {
+  const data = await loadFile(uf.toUpperCase());
+  return Object.values(data.municipios)
+    .map((m) => m.n)
+    .sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
 
 async function findMunicipio(file: string, place: Place) {
   const data = await loadFile(file);

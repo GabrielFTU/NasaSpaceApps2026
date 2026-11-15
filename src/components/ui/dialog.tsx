@@ -32,14 +32,14 @@ export function Dialog({ open, onClose, title, description, children, footer }: 
   if (!open) return null;
   return createPortal(
     <div className="fixed inset-0 z-[1000] flex items-end justify-center p-4 sm:items-center">
-      <div className="absolute inset-0 bg-[#141a15]/40" onClick={onClose} aria-hidden />
+      <div className="scrim absolute inset-0" onClick={onClose} aria-hidden />
       <div
         ref={ref}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="dialog-title"
-        className="animate-in relative w-full max-w-md rounded-lg border border-border bg-surface shadow-lg outline-none"
+        className="animate-in relative w-full max-w-md rounded-xl border border-border bg-surface shadow-raised outline-none"
       >
         <div className="flex items-start justify-between gap-4 px-5 pt-4">
           <div>

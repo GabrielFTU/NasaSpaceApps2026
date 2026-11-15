@@ -97,6 +97,63 @@ export function Switch({ checked, onCheckedChange, id, disabled, ...rest }: Swit
   );
 }
 
+/** Escolha única em pílulas — substitui selects com poucas opções (tudo visível, 1 clique). */
+export function ChoiceChips<T extends string>({
+  value,
+  onChange,
+  options,
+  "aria-label": ariaLabel,
+  className,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
+  "aria-label": string;
+  className?: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={ariaLabel} className={cn("flex flex-wrap gap-1.5", className)}>
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              "h-8 cursor-pointer rounded-full border px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+              on ? "border-primary bg-primary text-white" : "border-input bg-surface text-foreground hover:border-primary/40 hover:bg-primary-soft/50",
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Liga/desliga em formato de pílula — para sinais sim/não curtos. */
+export function ToggleChip({ checked, onCheckedChange, children }: { checked: boolean; onCheckedChange: (v: boolean) => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onCheckedChange(!checked)}
+      className={cn(
+        "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+        checked ? "border-warning/40 bg-warning-soft text-warning" : "border-input bg-surface text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <span className={cn("size-1.5 rounded-full", checked ? "bg-warning" : "bg-input")} />
+      {children}
+    </button>
+  );
+}
+
 interface CheckboxProps {
   checked: boolean;
   onCheckedChange: (v: boolean) => void;

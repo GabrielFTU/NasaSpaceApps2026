@@ -1,28 +1,51 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { Check, Download, Eraser, FlaskConical, MapPinned, Pencil, PenLine, Plus, Satellite, Trash2, Undo2, Upload, X, Map as MapIcon } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  Crosshair,
+  Satellite,
+  ZoomOut,
+  Download,
+  Eraser,
+  FlaskConical,
+  Layers,
+  ListTree,
+  MapPinned,
+  Pencil,
+  PenLine,
+  Plus,
+  Sprout,
+  Trash2,
+  Undo2,
+  Upload,
+  X,
+  Map as MapIcon,
+} from "lucide-react";
 import type { Plot, PlotInput } from "@/types";
 import { useAppStore, useSelectedProperty } from "@/app/store";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Select } from "@/components/ui/form";
-import { Callout, Segmented } from "@/components/ui/misc";
+import { Input } from "@/components/ui/form";
+import { Callout } from "@/components/ui/misc";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/shared";
 import { toast } from "@/components/ui/toast";
 import type { BaseLayer } from "@/components/maps";
 import { cn, round } from "@/lib/utils";
-import { fmt, parseISODate, toISODate } from "@/lib/format";
+import { fmt, formatDate, parseISODate, toISODate } from "@/lib/format";
 import { polygonAreaHa, polygonCenter, polygonPerimeterM } from "@/lib/geo";
 import { downloadJson, parsePolygons, plotsToFeatureCollection } from "@/lib/geojson";
 import { layerById, type LayerId } from "@/services/environment/catalog";
 import { MapView, type ActiveRaster } from "./components/MapView";
-import { LayerBar, chipFor } from "./components/LayerBar";
-import { ActiveLayerCard } from "./components/ActiveLayerCard";
+import { CHIPS, chipFor } from "./components/LayerBar";
+import { ActiveLayerCard, colorAt, MapLegend, useLayerScale } from "./components/ActiveLayerCard";
+import { Dropdown } from "@/components/ui/dropdown";
+import type { LegendScale } from "@/services/environment/colormap";
 import { InsightsDock } from "./components/InsightsDock";
 import { PlotFormDialog } from "./components/PlotFormDialog";
-import { useAreaEnvironment, useLayerDates, type AreaTarget } from "./hooks";
-import { availableEnd, presetPeriod, type Period } from "./period";
+import { useAreaEnvironment, useEnvSummary, useLayerDates, type AreaTarget, type EnvSummary } from "./hooks";
+import { availableEnd, PERIOD_PRESETS, presetPeriod, safraLabel, validatePeriod, type Period, type PeriodPreset } from "./period";
 
 type DrawState = { points: [number, number][]; editingId: string | null };
 
@@ -50,7 +73,6 @@ export function EnvironmentalMapPage() {
   const [draw, setDraw] = useState<DrawState | null>(null);
   const [dialog, setDialog] = useState<{ boundary: [number, number][]; plot?: Plot } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Plot | null>(null);
-  const [dockOpen, setDockOpen] = useState(true);
   const [plotsOpen, setPlotsOpen] = useState(false);
   const [zoom, setZoom] = useState(15);
   const [tileErrors, setTileErrors] = useState<Set<string>>(new Set());
@@ -67,10 +89,15 @@ export function EnvironmentalMapPage() {
   const layerDates = useLayerDates(activeList, mapDate);
   const activeDate = active ? layerDates[active.id] : undefined;
   const shownDate = activeDate?.status === "ready" ? activeDate.data.date : null;
+  // pixel grosso visto de perto = cor chapada: em vez da imagem, mostramos o valor sobre a área
+  const coarse = !!active?.detailZoom && zoom > active.detailZoom;
   const rasters: ActiveRaster[] = useMemo(
-    () => (active && (active.render.kind === "gibs" || active.render.kind === "computed") ? [{ layer: active, opacity, date: shownDate }] : []),
-    [active, opacity, shownDate],
+    () => (active && !coarse && (active.render.kind === "gibs" || active.render.kind === "computed") ? [{ layer: active, opacity, date: shownDate }] : []),
+    [active, coarse, opacity, shownDate],
   );
+  const scale = useLayerScale(active);
+  const [view, setView] = useState<{ n: number; kind: "region" | "area"; zoom?: number } | null>(null);
+  const requestView = (kind: "region" | "area") => setView((v) => ({ n: (v?.n ?? 0) + 1, kind, zoom: active?.detailZoom ? active.detailZoom - 2 : 7 }));
   const soilOpacity = activeId === "soil" ? opacity : null;
 
   const onOpacity = useCallback((v: number) => activeId && setOpacities((s) => ({ ...s, [activeId]: v })), [activeId]);
@@ -78,7 +105,6 @@ export function EnvironmentalMapPage() {
   const onTileError = useCallback((id: string) => setTileErrors((s) => (s.has(id) ? s : new Set(s).add(id))), []);
   const finishRef = useRef<() => void>(() => {});
   const onDrawClose = useCallback(() => finishRef.current(), []);
-  const toggleDock = useCallback(() => setDockOpen((v) => !v), []);
 
   const target: AreaTarget | null = useMemo(() => {
     if (!property) return null;
@@ -89,6 +115,7 @@ export function EnvironmentalMapPage() {
     return { lat: property.latitude, lon: property.longitude, boundary: property.boundary, key: property.id };
   }, [property, selectedPlot]);
   const env = useAreaEnvironment(target, period);
+  const summary = useEnvSummary(env, period);
 
   const focus = useMemo(
     () => ({
@@ -113,7 +140,7 @@ export function EnvironmentalMapPage() {
         <EmptyState
           icon={<MapPinned />}
           title="Cadastre uma propriedade"
-          description="O Mapa Ambiental mostra os dados da propriedade e dos talhões cadastrados."
+          description="Cadastre uma área para ver o mapa."
           action={
             <Link to="/propriedades/nova" className="text-sm font-medium text-primary hover:underline">
               Cadastrar propriedade →
@@ -176,9 +203,69 @@ export function EnvironmentalMapPage() {
 
   const drawArea = draw && draw.points.length >= 3 ? polygonAreaHa(draw.points) : 0;
 
+  const chipKey = chip?.key ?? "";
+  const selectChip = (key: string) => setActiveId(key ? (CHIPS.find((c) => c.key === key)?.layers[0] ?? null) : null);
+  const areaHa = selectedPlot ? selectedPlot.areaHa : property.boundary ? property.areaHa : null;
+  const hasBoundary = !!target?.boundary && target.boundary.length >= 3;
+  const areaTint = coarse && active ? tintFor(active.id, summary, scale) : null;
+
   return (
-    <div className="flex flex-col lg:h-full">
-      <div className="relative h-[68vh] min-h-[380px] lg:h-auto lg:min-h-0 lg:flex-1">
+    <div className="lg:h-full lg:overflow-y-auto">
+      <div className="mx-auto flex max-w-[1560px] flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8">
+        {/* Filtros: uma barra só, rótulo discreto + valor */}
+        <div className="flex flex-col divide-y divide-border rounded-lg border border-border bg-surface md:flex-row md:items-stretch md:divide-x md:divide-y-0">
+          <FilterField label="Camada">
+            <Dropdown
+              aria-label="Camada do mapa"
+              value={chipKey}
+              onChange={selectChip}
+              className={TRIGGER}
+              menuClassName="w-64"
+              options={[
+                ...CHIPS.map((c) => ({ value: c.key, label: c.key === "ndvi" ? "Vegetação (NDVI)" : c.label, icon: <c.icon /> })),
+                { value: "", label: "Somente o mapa", icon: <MapIcon /> },
+              ]}
+            />
+          </FilterField>
+
+          <FilterField label="Área">
+            <Dropdown
+              aria-label="Área de análise"
+              value={selectedPlotId ?? ""}
+              onChange={(v) => setSelectedPlotId(v || null)}
+              className={TRIGGER}
+              menuClassName="w-64"
+              options={[
+                { value: "", label: "Propriedade inteira", hint: property.boundary ? `${fmt.n2(property.areaHa)} ha` : undefined },
+                ...plots.map((p) => ({
+                  value: p.id,
+                  label: p.name,
+                  hint: [`${fmt.n2(p.areaHa)} ha`, p.currentCrop, p.demo ? "exemplo" : null].filter(Boolean).join(" · "),
+                })),
+              ]}
+            >
+              {selectedPlot?.name ?? "Propriedade inteira"}
+              {areaHa !== null && <span className="tabular ml-2 font-normal text-subtle-foreground">{fmt.n2(areaHa)} ha</span>}
+            </Dropdown>
+          </FilterField>
+
+          <FilterField label="Período">
+            <PeriodSelect period={period} onPeriod={setPeriod} />
+          </FilterField>
+
+          <div className="flex items-center gap-1 px-2 py-1.5 md:py-0">
+            <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground" onClick={() => setPlotsOpen(true)}>
+              <ListTree /> Talhões
+            </Button>
+            <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-foreground" onClick={() => startDraw()}>
+              <PenLine /> Desenhar
+            </Button>
+          </div>
+        </div>
+
+        {/* Mapa + camada */}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="relative h-[58vh] min-h-[380px] overflow-hidden rounded-lg border border-border shadow-card lg:h-[480px]">
         <MapErrorBoundary onReset={() => setMapKey((k) => k + 1)}>
           <MapView
             key={mapKey}
@@ -195,13 +282,15 @@ export function EnvironmentalMapPage() {
             focus={focus}
             onZoom={setZoom}
             onTileError={onTileError}
+            areaTint={areaTint}
+            view={view}
           />
         </MapErrorBoundary>
 
         {draw ? (
           /* Ferramenta de desenho: substitui os controles do topo */
           <div className="pointer-events-none absolute inset-x-3 top-3 z-[500] flex justify-center">
-            <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface/95 px-3 py-2 shadow-md backdrop-blur">
+            <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-lg glass border px-3 py-2 ">
               <div className="mr-1 text-[13px]">
                 <p className="font-semibold">{draw.editingId ? "Editando contorno" : "Novo talhão"}</p>
                 <p className="tabular text-muted-foreground">
@@ -225,69 +314,58 @@ export function EnvironmentalMapPage() {
             </div>
           </div>
         ) : (
-          <div className="pointer-events-none absolute inset-x-3 top-3 z-[500] flex flex-wrap items-start gap-2">
-            {/* Talhão */}
-            <div className="pointer-events-auto flex items-center gap-1 rounded-lg bg-surface/95 p-1 shadow-md backdrop-blur">
-              <Select
-                aria-label="Talhão"
-                value={selectedPlotId ?? ""}
-                onChange={(e) => setSelectedPlotId(e.target.value || null)}
-                className="h-9 w-[190px] border-0 bg-transparent text-[13px] font-medium"
-              >
-                <option value="">Propriedade inteira</option>
-                {plots.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                    {p.demo ? " (exemplo)" : ""}
-                  </option>
-                ))}
-              </Select>
-              <Button size="sm" variant="ghost" onClick={() => setPlotsOpen(true)} title="Gerenciar talhões">
-                <MapIcon /> Talhões
-              </Button>
-              <Button size="sm" onClick={() => startDraw()} title="Desenhar novo talhão">
-                <PenLine /> <span className="hidden sm:inline">Desenhar</span>
-              </Button>
-            </div>
-
-            {/* Camadas */}
-            <div className="pointer-events-auto order-last w-full min-w-0 sm:order-none sm:w-auto sm:flex-1">
-              <LayerBar active={activeId} onSelect={setActiveId} />
-            </div>
-
+          <>
             {/* Mapa-base */}
-            <div className="pointer-events-auto ml-auto rounded-lg bg-surface/95 p-1 shadow-md backdrop-blur">
-              <Segmented
+            <div className="absolute bottom-3 left-3 z-[500]">
+              <Dropdown
                 aria-label="Mapa-base"
                 value={base}
                 onChange={setBase}
-                className="border-0 bg-transparent"
+                side="top"
+                className="rounded-md bg-white/95 px-3 py-1.5 text-[13px] font-semibold shadow-card"
+                menuClassName="w-40"
                 options={[
-                  { value: "satelite", label: "Satélite" },
-                  { value: "mapa", label: "Mapa" },
+                  { value: "satelite", label: "Satélite", icon: <Satellite /> },
+                  { value: "mapa", label: "Mapa", icon: <MapIcon /> },
                 ]}
-              />
+              >
+                <span className="flex items-center gap-1.5">
+                  <Layers className="size-4" /> {base === "satelite" ? "Satélite" : "Mapa"}
+                </span>
+              </Dropdown>
             </div>
-          </div>
-        )}
 
-        {active && chip && !draw && (
-          <div className="pointer-events-none absolute bottom-4 left-3 z-[500]">
-            <ActiveLayerCard
-              key={chip.key}
-              layer={active}
-              chip={chip}
-              opacity={opacity}
-              onOpacity={onOpacity}
-              onVariant={setActiveId}
-              date={activeDate}
-              mapDate={mapDate}
-              onMapDate={setMapDate}
-              onStep={stepDate}
-              zoom={zoom}
-              tileError={tileErrors.has(active.id)}
-            />
-          </div>
+            {/* Escala: produtos de pixel grosso */}
+            {active?.detailZoom && (
+              <div className="pointer-events-none absolute inset-x-3 top-3 z-[500] flex justify-center">
+                <div className="animate-in pointer-events-auto flex items-center gap-1 rounded-full bg-white/95 py-1 pl-3.5 pr-1 text-xs shadow-card">
+                  <span className="text-muted-foreground">
+                    {coarse ? <>Valor médio da área · pixel NASA {active.pixel}</> : <>Visão regional · pixel {active.pixel}</>}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => requestView(coarse ? "region" : "area")}
+                    className="flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 font-semibold text-primary transition-colors hover:bg-primary-soft"
+                  >
+                    {coarse ? (
+                      <>
+                        <ZoomOut className="size-3.5" /> Ver região
+                      </>
+                    ) : (
+                      <>
+                        <Crosshair className="size-3.5" /> Voltar à área
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+            {active && chip && (!coarse || areaTint?.opacity !== WHITE_TINT) && (
+              <div className="pointer-events-none absolute bottom-3 right-3 z-[500]">
+                <MapLegend layer={active} title={active.id === "ndvi" ? "Índice de vegetação (NDVI)" : chip.label} zoom={zoom} />
+              </div>
+            )}
+          </>
         )}
 
         {plotsOpen && (
@@ -328,19 +406,51 @@ export function EnvironmentalMapPage() {
         />
       </div>
 
-      <div className={cn("lg:shrink-0", dockOpen && "lg:h-[27vh] lg:min-h-[250px]")}>
-        <InsightsDock
-          env={env}
-          period={period}
-          onPeriod={setPeriod}
-          areaName={selectedPlot ? selectedPlot.name : `${property.name} (inteira)`}
-          areaHa={selectedPlot ? selectedPlot.areaHa : property.boundary ? property.areaHa : null}
-          isDemo={!!selectedPlot?.demo}
-          hasBoundary={!!target?.boundary && target.boundary.length >= 3}
-          texture={texture}
-          open={dockOpen}
-          onToggle={toggleDock}
-        />
+          {active && chip ? (
+            <ActiveLayerCard
+              key={chip.key}
+              layer={active}
+              chip={chip}
+              env={env}
+              summary={summary}
+              texture={texture.value}
+              hasBoundary={hasBoundary}
+              opacity={opacity}
+              onOpacity={onOpacity}
+              onVariant={setActiveId}
+              date={activeDate}
+              mapDate={mapDate}
+              onMapDate={setMapDate}
+              onStep={stepDate}
+              tileError={tileErrors.has(active.id)}
+            />
+          ) : (
+            <section className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-input bg-surface/60 p-6 text-center text-sm text-muted-foreground">
+              <Layers className="size-5" />
+              Escolha uma camada em “O que deseja visualizar?”.
+            </section>
+          )}
+        </div>
+
+        {/* Evolução + próxima safra */}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <InsightsDock env={env} summary={summary} period={period} hasBoundary={hasBoundary} texture={texture} chipKey={chipKey} />
+          <section className="flex flex-col rounded-lg border border-[#d6e8cf] bg-primary-soft/70 p-6">
+            <div className="flex items-start gap-3">
+              <Sprout className="mt-0.5 size-7 shrink-0 text-primary" />
+              <h2 className="text-[19px] font-semibold leading-snug text-brand-dark">Planejamento da próxima safra</h2>
+            </div>
+            <p className="mt-3 text-sm leading-relaxed text-primary-soft-foreground/90">
+              Use as condições ambientais da sua propriedade para explorar diferentes estratégias de rotação de culturas.
+            </p>
+            <Link
+              to="/analise"
+              className="mt-auto flex items-center justify-between rounded-md bg-brand-dark px-5 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-primary max-lg:mt-5 lg:mt-6"
+            >
+              Comparar rotações <ChevronRight className="size-5" />
+            </Link>
+          </section>
+        </div>
       </div>
 
       <PlotFormDialog
@@ -368,6 +478,83 @@ export function EnvironmentalMapPage() {
   );
 }
 
+
+/* ---------- Filtros ---------- */
+
+function FilterField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex min-w-0 items-center gap-3 px-4 py-3 md:flex-1">
+      <span className="w-16 shrink-0 text-[13px] text-muted-foreground md:w-auto">{label}</span>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
+/** Gatilho dos dropdowns da barra de filtros: valor em destaque, sem borda. */
+const TRIGGER = "py-0.5 text-[14px] font-semibold text-foreground";
+
+/** Sentinela: área só com o valor (sem paleta para colorir). */
+const WHITE_TINT = 0.12;
+
+/** Valor médio do período pintado sobre a área quando o pixel da NASA é maior que a tela. */
+function tintFor(id: LayerId, s: EnvSummary, scale: LegendScale | null): { color: string; label: string; opacity: number } | null {
+  const { ci, si } = s;
+  if (id === "temp") {
+    if (ci?.meanTemp == null) return null;
+    const c = scale ? colorAt(scale, ci.meanTemp) : null;
+    return { color: c ?? "#ffffff", label: `${fmt.n1(ci.meanTemp)} °C`, opacity: c ? 0.6 : WHITE_TINT };
+  }
+  if (id === "rh") return ci?.meanRh == null ? null : { color: "#ffffff", label: `${fmt.n0(ci.meanRh)}%`, opacity: WHITE_TINT };
+  if (id === "precip") return ci?.totalPrecip == null ? null : { color: "#ffffff", label: `${fmt.n0(ci.totalPrecip)} mm`, opacity: WHITE_TINT };
+  if (id === "smap_surface" || id === "smap_root") {
+    const v = id === "smap_root" ? si?.last?.rootZone : si?.last?.surface;
+    return v == null ? null : { color: "#ffffff", label: `${fmt.n2(v)} m³/m³`, opacity: WHITE_TINT };
+  }
+  return null;
+}
+
+function PeriodSelect({ period, onPeriod }: { period: Period; onPeriod: (p: Period) => void }) {
+  const [custom, setCustom] = useState({ start: period.start, end: period.end });
+  const error = period.preset === "custom" ? validatePeriod(custom.start, custom.end) : null;
+  const pick = (preset: PeriodPreset) => {
+    if (preset === "custom") {
+      setCustom({ start: period.start, end: period.end });
+      onPeriod({ ...period, preset: "custom" });
+    } else onPeriod(presetPeriod(preset));
+  };
+  const apply = (next: { start: string; end: string }) => {
+    setCustom(next);
+    if (!validatePeriod(next.start, next.end)) onPeriod({ preset: "custom", ...next });
+  };
+  const label = (o: (typeof PERIOD_PRESETS)[number]) =>
+    o.value === "safra" ? `Safra ${safraLabel(presetPeriod("safra"))}` : o.value === "custom" ? "Personalizado" : `Últimos ${o.label}`;
+  const hint = (o: (typeof PERIOD_PRESETS)[number]) => {
+    if (o.value === "custom") return "Escolha início e fim";
+    const p = presetPeriod(o.value);
+    return `${formatDate(p.start, { day: "2-digit", month: "short" })} – ${formatDate(p.end, { day: "2-digit", month: "short", year: "numeric" })}`;
+  };
+  return (
+    <>
+      <Dropdown
+        aria-label="Período"
+        value={period.preset}
+        onChange={pick}
+        className={TRIGGER}
+        menuClassName="w-64"
+        align="end"
+        options={PERIOD_PRESETS.map((o) => ({ value: o.value, label: label(o), hint: hint(o) }))}
+      />
+      {period.preset === "custom" && (
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <Input type="date" aria-label="Início" className="h-7 px-2 text-xs" value={custom.start} min="1981-01-01" max={availableEnd()} aria-invalid={!!error} onChange={(e) => apply({ ...custom, start: e.target.value })} />
+          <span className="text-xs text-muted-foreground">até</span>
+          <Input type="date" aria-label="Fim" className="h-7 px-2 text-xs" value={custom.end} min="1981-01-01" max={availableEnd()} aria-invalid={!!error} onChange={(e) => apply({ ...custom, end: e.target.value })} />
+        </div>
+      )}
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+    </>
+  );
+}
 
 class MapErrorBoundary extends Component<{ children: ReactNode; onReset: () => void }, { error: Error | null }> {
   state = { error: null as Error | null };
@@ -486,16 +673,13 @@ function PlotsPanel(props: {
 }
 
 function DataModeNote({ mode }: { mode: "mock" | "api" }) {
-  return mode === "mock" ? (
+  if (mode !== "mock") return null;
+  return (
     <Callout tone="warning" icon={<FlaskConical />} className="mt-4">
-      <strong>Modo demonstração:</strong> indicadores e gráficos usam séries simuladas. As imagens do mapa continuam reais (NASA).{" "}
+      <strong>Modo demonstração</strong> · indicadores simulados.{" "}
       <Link to="/configuracoes?secao=fontes" className="font-medium underline">
         Alterar
       </Link>
-    </Callout>
-  ) : (
-    <Callout tone="info" icon={<Satellite />} className="mt-4">
-      Dados consultados na NASA. Quando uma fonte não responde, o valor aparece como <strong>Simulado</strong> ou <strong>Indisponível</strong>.
     </Callout>
   );
 }

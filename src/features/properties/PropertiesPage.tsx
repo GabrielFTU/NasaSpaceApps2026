@@ -41,7 +41,7 @@ export function PropertiesPage() {
         <EmptyState
           icon={<MapPinned />}
           title="Nenhuma propriedade cadastrada"
-          description="Desenhe o contorno da sua área na imagem de satélite. A área em hectares é calculada sozinha."
+          description="Desenhe o contorno no mapa — a área é calculada sozinha."
           action={
             <Link to="/propriedades/nova" className={buttonVariants()}>
               <Plus /> Cadastrar propriedade
@@ -65,7 +65,7 @@ export function PropertiesPage() {
                     <Button
                       variant="outline"
                       size="icon-sm"
-                      className="border-0 bg-white/95 shadow-sm"
+                      className="glass border-0"
                       aria-label={`Ações para ${p.name}`}
                       aria-expanded={menu === p.id}
                       onClick={() => setMenu(menu === p.id ? null : p.id)}
@@ -73,7 +73,7 @@ export function PropertiesPage() {
                       <MoreHorizontal />
                     </Button>
                     {menu === p.id && (
-                      <div className="animate-in absolute right-0 top-9 w-44 rounded-md border border-border bg-white p-1 shadow-lg" onMouseLeave={() => setMenu(null)}>
+                      <div className="glass animate-in absolute right-0 top-9 w-44 rounded-md border p-1" onMouseLeave={() => setMenu(null)}>
                         <MenuItem icon={<Pencil />} onClick={() => navigate(`/propriedades/${p.id}/editar`)}>
                           Editar
                         </MenuItem>
@@ -106,12 +106,12 @@ export function PropertiesPage() {
                   <p className="text-sm text-muted-foreground">
                     {p.city}, {p.state}
                   </p>
-                  <div className="mt-3 flex items-center gap-4 text-sm">
-                    <span>
-                      <strong>{fmt.n1(p.areaHa)}</strong> ha
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[12px]">
+                    <span className="rounded-full bg-primary-soft px-2.5 py-1 font-semibold text-primary-soft-foreground">{fmt.n1(p.areaHa)} ha</span>
+                    <span className="rounded-full bg-muted px-2.5 py-1 text-muted-foreground">Solo {SOIL_TEXTURE_LABEL[p.soil.texture].toLowerCase()}</span>
+                    <span className="rounded-full bg-muted px-2.5 py-1 text-muted-foreground">
+                      {n} {n === 1 ? "análise" : "análises"}
                     </span>
-                    <span className="text-muted-foreground">Solo {SOIL_TEXTURE_LABEL[p.soil.texture].toLowerCase()}</span>
-                    <span className="text-muted-foreground">{n} análise(s)</span>
                   </div>
                   <Link to={`/analise?propriedade=${p.id}`} className={buttonVariants({ variant: "subtle", className: "mt-4 w-full" })}>
                     <Sprout /> Nova análise

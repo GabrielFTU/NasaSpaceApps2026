@@ -41,7 +41,7 @@ export function Toaster() {
           <div
             key={t.id}
             role="status"
-            className="animate-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-lg border border-border bg-surface px-4 py-3 shadow-md"
+            className="animate-in pointer-events-auto flex w-full max-w-sm items-start gap-3 glass rounded-lg border px-4 py-3"
           >
             <Icon className={cn("mt-0.5 size-4 shrink-0", ICON_COLOR[t.kind])} />
             <div className="min-w-0 flex-1">

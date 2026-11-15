@@ -9,14 +9,21 @@ import { DECENDIOS, MONTH_LABELS, ZARC_SOURCE, decLabel, decendioOf, windowLabel
 
 export const ZARC_ORIGIN_TITLE = "Tábua de risco oficial do MAPA (dados abertos)";
 export const RISK_COLOR: Record<ZarcRisk, string> = { 20: "#1baf7a", 30: "#eda100", 40: "#eb6834" };
-export const SEASON_LABEL = { verao: "1ª safra / verão", inverno: "2ª safra / inverno", anual: "ciclo anual" } as const;
+export const SEASON_LABEL = { verao: "Verão", inverno: "Inverno", anual: "Anual" } as const;
+const RISK_LABEL: Record<ZarcRisk, string> = { 20: "Baixo", 30: "Médio", 40: "Alto" };
 
 export interface CalendarRow {
   key: string;
   title: string;
   subtitle?: string;
+  /** Época de plantio (só culturas da rotação) — usada no filtro Verão/Inverno. */
+  season?: "verao" | "inverno" | "anual";
   profile: ZarcRiskProfile;
 }
+
+/** Menor chance de perda entre as janelas indicadas (a "melhor janela"). */
+export const bestRisk = (p: ZarcRiskProfile): ZarcRisk | null =>
+  p.risks.reduce<ZarcRisk | null>((m, r) => (r !== null && (m === null || r < m) ? r : m), null);
 
 export const windowsText = (p: ZarcRiskProfile) =>
   p.zoned ? p.windows.map((w) => `${windowLabel(w.startDec, w.endDec)} (${w.risk}%)`).join("; ") : "Sem indicação de plantio";
@@ -30,7 +37,8 @@ export function rotationRows(zarc: Extract<ZarcResult, { origin: "real" }>, crop
     .map(([key, e]) => ({
       key,
       title: cropName(e.cropId),
-      subtitle: CROP_MAP[e.cropId]?.role === "cobertura" ? `cobertura · ${SEASON_LABEL[e.season]}` : SEASON_LABEL[e.season],
+      subtitle: CROP_MAP[e.cropId]?.role === "cobertura" ? `${SEASON_LABEL[e.season]} · cobertura` : SEASON_LABEL[e.season],
+      season: e.season,
       profile: e,
     }));
 }
@@ -41,21 +49,24 @@ export function ZarcCalendar({ rows, footer, empty, className }: { rows: Calenda
   return (
     <div className={cn("flex flex-col gap-3", className)}>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] border-separate border-spacing-y-1 text-[13px]">
+        <table className="w-full min-w-[720px] border-separate border-spacing-y-1.5 text-[13px]">
           <thead>
-            <tr className="text-[11px] text-muted-foreground">
-              <th className="w-48 pr-3 text-left font-medium">Cultura</th>
-              {MONTH_LABELS.map((m, i) => (
-                <th key={m} colSpan={3} className={cn("font-medium capitalize", i > 0 && "border-l border-border")}>
+            <tr className="text-[11px] text-subtle-foreground">
+              <th className="w-40" />
+              {MONTH_LABELS.map((m) => (
+                <th key={m} colSpan={3} className="pb-1 font-medium capitalize">
                   {m}
                 </th>
               ))}
+              <th className="w-24 pb-1 pl-4 text-right font-medium" title="Menor chance de perda da safra entre as janelas indicadas">
+                Chance de perda
+              </th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={37} className="py-3 text-muted-foreground">
+                <td colSpan={38} className="py-3 text-muted-foreground">
                   {empty ?? "Nenhuma cultura com janela indicada neste município para o solo informado."}
                 </td>
               </tr>
@@ -69,7 +80,7 @@ export function ZarcCalendar({ rows, footer, empty, className }: { rows: Calenda
 
       <div className="flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
         <RiskLegend />
-        {footer && <span>{footer}</span>}
+        {footer && <span className="text-subtle-foreground">{footer}</span>}
       </div>
     </div>
   );
@@ -78,17 +89,15 @@ export function ZarcCalendar({ rows, footer, empty, className }: { rows: Calenda
 export function RiskLegend() {
   return (
     <div className="flex flex-wrap items-center gap-3">
+      <span className="text-subtle-foreground">Chance de perda</span>
       {([20, 30, 40] as ZarcRisk[]).map((r) => (
-        <span key={r} className="inline-flex items-center gap-1.5">
-          <span className="size-2.5 rounded-sm" style={{ background: RISK_COLOR[r] }} />
-          Risco {r}%
+        <span key={r} className="inline-flex items-center gap-1.5" title={`Risco ${RISK_LABEL[r].toLowerCase()}: ${r}% de chance de perda`}>
+          <span className="size-2 rounded-full" style={{ background: RISK_COLOR[r] }} />
+          <strong className="font-semibold text-foreground">{r}%</strong> {RISK_LABEL[r].toLowerCase()}
         </span>
       ))}
       <span className="inline-flex items-center gap-1.5">
-        <span className="size-2.5 rounded-sm bg-muted ring-1 ring-border" /> Não indicado
-      </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span className="h-3 w-0.5 bg-foreground" /> Hoje
+        <span className="h-3 w-0.5 rounded-full bg-foreground" /> Hoje
       </span>
     </div>
   );
@@ -96,25 +105,45 @@ export function RiskLegend() {
 
 function ZarcRow({ row, today }: { row: CalendarRow; today: number }) {
   const p = row.profile;
+  const best = bestRisk(p);
   return (
     <tr title={[windowsText(p), p.cycles.join(", "), p.managementLevel, p.portaria].filter(Boolean).join(" · ")}>
       <td className="pr-3 align-middle">
         <span className="block font-medium leading-tight">{row.title}</span>
-        {row.subtitle && <span className="block text-[11px] text-muted-foreground">{row.subtitle}</span>}
+        {row.subtitle && <span className="block text-[11px] text-subtle-foreground">{row.subtitle}</span>}
       </td>
       {DECENDIOS.map((d) => {
         const r = p.risks[d - 1];
+        const prev = d > 1 ? p.risks[d - 2] : null;
+        const next = d < 36 ? p.risks[d] : null;
         return (
-          <td key={d} className={cn("relative p-0", d % 3 === 1 && d > 1 && "border-l border-border")}>
+          <td key={d} className="relative p-0">
             <span
-              className={cn("block h-5", r === null && "bg-muted")}
+              className={cn(
+                "block h-3",
+                r === null ? "bg-muted" : [prev === null && "rounded-l-full", next === null && "rounded-r-full"],
+                d === 1 && "rounded-l-full",
+                d === 36 && "rounded-r-full",
+              )}
               style={r !== null ? { background: RISK_COLOR[r] } : undefined}
-              title={`${decLabel(d)}: ${r === null ? "não indicado" : `risco ${r}%`}`}
+              title={`${decLabel(d)}: ${r === null ? "não indicado" : `${r}% de chance de perda`}`}
             />
-            {d === today && <span className="pointer-events-none absolute inset-y-[-3px] left-1/2 w-0.5 -translate-x-1/2 bg-foreground" aria-hidden />}
+            {/* divisória de mês: linha alta e quase transparente, contínua entre as linhas */}
+            {d % 3 === 1 && d > 1 && <span className="pointer-events-none absolute inset-y-[-4px] left-0 w-px bg-foreground/[0.07]" aria-hidden />}
+            {d === today && <span className="pointer-events-none absolute inset-y-[-4px] left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-foreground" aria-hidden />}
           </td>
         );
       })}
+      <td className="pl-4 text-right align-middle">
+        {best === null ? (
+          <span className="text-subtle-foreground">—</span>
+        ) : (
+          <span className="tabular inline-flex items-center gap-1.5 font-semibold" title={`Na melhor janela: ${best}% de chance de perda`}>
+            <span className="size-2 rounded-full" style={{ background: RISK_COLOR[best] }} />
+            {best}%
+          </span>
+        )}
+      </td>
     </tr>
   );
 }
@@ -133,10 +162,7 @@ export function ZarcUnavailable({ reason, className }: { reason: string; classNa
 export function ZarcRotationCalendar({ zarc, cropIds }: { zarc: ZarcResult; cropIds?: string[] }) {
   if (zarc.origin !== "real") return <ZarcUnavailable reason={zarc.reason} />;
   return (
-    <ZarcCalendar
-      rows={rotationRows(zarc, cropIds)}
-      footer={`${zarc.municipio}/${zarc.uf} · safra ${zarc.safra} · solo ${zarc.soilLabel} · sequeiro`}
-    />
+    <ZarcCalendar rows={rotationRows(zarc, cropIds)} />
   );
 }
 

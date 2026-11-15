@@ -7,7 +7,10 @@ import type { PriorityKey, ScenarioResult } from "@/types";
 
 /** Cores fixas por cenário — usadas em anéis, barras e legendas. */
 export const SCENARIO_COLOR: Record<ScenarioResult["key"], string> = {
-  atual: "#e5a000",
+  atual: "#8a958b",
+  retorno: "#1d8a34",
+  estavel: "#2a78d6",
+  equilibrio: "#c27c0e",
   a: "#1d8a34",
   b: "#2a78d6",
 };
@@ -54,7 +57,14 @@ export function ScoreRing({ value, color, size = 76 }: { value: number; color: s
   );
 }
 
-const TAG: Record<ScenarioResult["key"], string> = { atual: "Atual", a: "Alternativa A", b: "Alternativa B" };
+const TAG: Record<ScenarioResult["key"], string> = {
+  atual: "Atual",
+  retorno: "Mais rentável",
+  estavel: "Mais estável",
+  equilibrio: "Risco moderado",
+  a: "Alternativa A",
+  b: "Alternativa B",
+};
 
 interface Props {
   scenario: ScenarioResult;

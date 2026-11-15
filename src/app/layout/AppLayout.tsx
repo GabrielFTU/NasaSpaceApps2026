@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { Bell, ChevronDown, CloudSun, History, Home, Map as MapIcon, Menu, Settings, Sprout, X, Database, BellOff, Layers } from "lucide-react";
-import { Logo, NasaMark } from "@/components/shared";
+import { Bell, ChevronDown, CloudSun, History, Home, Map as MapIcon, Menu, Settings, Sprout, X, BellOff, Layers } from "lucide-react";
+import { Logo, SpaceAppsLogo } from "@/components/shared";
+import { ImageCreditsLink } from "@/components/ImageCreditsDialog";
 import { Toaster } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { useAppStore, useSelectedProperty } from "@/app/store";
@@ -19,7 +20,6 @@ const NAV = [
   { to: "/historico", label: "Estratégias salvas", icon: History },
 ];
 const NAV_PROJECT = [
-  { to: "/configuracoes?secao=fontes", label: "Fontes de dados", icon: Database, match: "fontes" },
   { to: "/configuracoes", label: "Configurações", icon: Settings, match: "" },
 ];
 
@@ -38,8 +38,10 @@ const TITLES: [RegExp, string][] = [
 
 function navClass(active: boolean) {
   return cn(
-    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px] font-medium transition-colors",
-    active ? "bg-primary text-white" : "text-[#2a3a2d] hover:bg-muted",
+    "flex items-center gap-3 rounded-lg px-3 py-2 text-[14px] font-medium transition-colors",
+    active
+      ? "bg-primary-soft text-primary-soft-foreground [&_svg]:text-primary"
+      : "text-muted-foreground hover:bg-muted hover:text-foreground",
   );
 }
 
@@ -48,31 +50,22 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const section = new URLSearchParams(location.search).get("secao") ?? "";
   return (
     <>
-      <nav className="flex flex-col gap-1" aria-label="Navegação principal">
+      <nav className="flex flex-col gap-0.5" aria-label="Navegação principal">
         {NAV.map(({ to, label, icon: Icon, end }) => (
           <NavLink key={to} to={to} end={end} onClick={onNavigate} className={({ isActive }) => navClass(isActive)}>
-            <Icon className="size-[18px]" />
+            <Icon className="size-[18px] transition-colors" />
             {label}
           </NavLink>
         ))}
       </nav>
-      <div className="my-5 h-px bg-border" />
-      <p className="mb-2 px-3 text-[13px] font-semibold text-foreground">Projeto</p>
-      <nav className="flex flex-col gap-1" aria-label="Projeto">
+      <nav className="mt-auto flex flex-col gap-0.5 border-t border-border pt-3" aria-label="Conta">
         {NAV_PROJECT.map(({ to, label, icon: Icon, match }) => (
           <Link key={to} to={to} onClick={onNavigate} className={navClass(location.pathname === "/configuracoes" && section === match)}>
-            <Icon className="size-[18px]" />
+            <Icon className="size-[18px] transition-colors" />
             {label}
           </Link>
         ))}
       </nav>
-      <div className="mt-auto flex items-center gap-3 px-2">
-        <NasaMark className="h-12" />
-        <p className="text-[13px] leading-snug text-[#2a3a2d]">
-          <strong className="block text-foreground">Dados NASA</strong>
-          POWER · SMAP · MODIS
-        </p>
-      </div>
     </>
   );
 }
@@ -127,10 +120,14 @@ function AlertsBell() {
     <div className="relative" ref={ref}>
       <Button variant="ghost" size="icon" onClick={() => setOpen((v) => !v)} aria-label={`Alertas (${active.length} ativos)`} aria-expanded={open}>
         <Bell className="!size-5" />
-        {active.length > 0 && <span className="absolute right-2 top-2 size-2 rounded-full bg-brand-lime ring-2 ring-white" />}
+        {active.length > 0 && (
+          <span className="absolute right-0.5 top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-space-red px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white">
+            {active.length}
+          </span>
+        )}
       </Button>
       {open && (
-        <div className="animate-in absolute right-0 top-11 z-[1000] w-80 rounded-lg border border-border bg-white p-2 shadow-lg">
+        <div className="animate-in absolute right-0 top-11 z-[1000] w-80 max-w-[calc(100vw-2rem)] glass rounded-lg border p-2">
           <p className="px-2 pt-1 pb-2 text-sm font-semibold">Alertas · {property?.name}</p>
           {active.length === 0 ? (
             <p className="flex items-center gap-2 rounded-md bg-muted px-3 py-3 text-[13px] text-muted-foreground">
@@ -162,7 +159,12 @@ function Avatar() {
     .map((w) => w[0]?.toUpperCase())
     .join("");
   return (
-    <Link to="/configuracoes" className="flex size-10 items-center justify-center rounded-full bg-primary text-sm font-semibold text-white" title={name}>
+    <Link
+      to="/configuracoes"
+      className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-brand-dark text-[13px] font-semibold text-white ring-2 ring-white shadow-card transition-transform hover:scale-105"
+      title={name}
+      aria-label={`Perfil de ${name}`}
+    >
       {initials || "?"}
     </Link>
   );
@@ -180,20 +182,26 @@ export function AppLayout() {
   }, [location.pathname]);
 
   return (
-    <div className="min-h-full lg:pl-64">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-sidebar px-4 py-6 lg:flex">
-        <Link to="/" className="mb-8 px-2">
-          <Logo className="h-11" />
+    <div className="flex min-h-full flex-col lg:pl-64">
+      <a
+        href="#conteudo"
+        className="sr-only z-[1001] rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
+      >
+        Pular para o conteúdo
+      </a>
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col overflow-y-auto border-r border-border bg-sidebar px-4 py-6 lg:flex">
+        <Link to="/" className="mb-8 px-3" aria-label="Semeia — início">
+          <Logo />
         </Link>
         <Sidebar />
       </aside>
 
       {open && (
-        <div className="fixed inset-0 z-[900] lg:hidden">
-          <div className="absolute inset-0 bg-[#0b1f0e]/40" onClick={() => setOpen(false)} />
-          <aside className="animate-in absolute inset-y-0 left-0 flex w-72 max-w-[85%] flex-col bg-white px-4 py-5">
+        <div className="fixed inset-0 z-[900] lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+          <div className="scrim absolute inset-0" onClick={() => setOpen(false)} />
+          <aside className="animate-in absolute inset-y-0 left-0 flex w-72 max-w-[85%] flex-col overflow-y-auto rounded-r-xl bg-sidebar px-4 py-5 shadow-raised">
             <div className="mb-6 flex items-center justify-between px-2">
-              <Logo className="h-9" />
+              <Logo size="sm" />
               <Button variant="ghost" size="icon-sm" onClick={() => setOpen(false)} aria-label="Fechar menu">
                 <X />
               </Button>
@@ -203,23 +211,43 @@ export function AppLayout() {
         </div>
       )}
 
-      <header className="sticky top-0 z-[800] flex h-16 items-center gap-2 border-b border-border bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-8">
+      <header className="glass sticky top-0 z-[800] flex h-16 items-center gap-2 border-b !border-border/70 !shadow-none px-4 sm:px-6 lg:px-8">
         <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setOpen(true)} aria-label="Abrir menu">
           <Menu />
         </Button>
-        <h1 className="hidden text-[17px] font-semibold sm:block">{title}</h1>
-        <img src="/logo-mark.png" alt="" className="h-7 sm:hidden" />
-        <div className="ml-auto flex items-center gap-1 sm:gap-3">
+        <h1 className="hidden truncate text-[18px] font-semibold sm:block">{title}</h1>
+        <Link to="/" className="sm:hidden" aria-label="Semeia — início">
+          <Logo size="sm" />
+        </Link>
+        <div className="ml-auto flex items-center gap-1 sm:gap-2">
           <PropertySwitcher />
+          <div className="mx-1 hidden h-6 w-px bg-border sm:block" />
           <AlertsBell />
           <Avatar />
         </div>
       </header>
 
       {/* telas de mapa ocupam toda a área útil, sem margens nem largura máxima */}
-      <main className={fullBleed ? "w-full lg:h-[calc(100dvh-4rem)]" : "mx-auto w-full max-w-[1280px] px-4 py-6 sm:px-6 lg:px-8"}>
+      <main
+        id="conteudo"
+        tabIndex={-1}
+        className={fullBleed ? "w-full outline-none lg:h-[calc(100dvh-4rem)]" : "mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 outline-none sm:px-6 lg:px-8"}
+      >
         <Outlet />
       </main>
+      {!fullBleed && (
+        <footer className="mx-auto flex w-full max-w-[1280px] flex-col items-center gap-4 border-t border-border px-4 py-6 text-[12.5px] text-muted-foreground sm:flex-row sm:justify-between sm:px-6 lg:px-8">
+          <p className="text-center sm:text-left">
+            Projeto desenvolvido para o{" "}
+            <a href="https://www.spaceappschallenge.org/" target="_blank" rel="noreferrer" className="font-semibold text-foreground hover:text-primary">
+              NASA Space Apps Challenge
+            </a>
+            .<span className="mx-2 text-border">|</span>
+            <ImageCreditsLink />
+          </p>
+          <SpaceAppsLogo className="h-7 opacity-80" />
+        </footer>
+      )}
       <Toaster />
     </div>
   );

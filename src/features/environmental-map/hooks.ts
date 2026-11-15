@@ -6,6 +6,7 @@ import type { TerrainStats } from "@/services/environment/terrain";
 import { getAvailableDates, searchWindow, snapDate, type SnappedDate } from "@/services/environment/gibsTime";
 import type { EnvLayer } from "@/services/environment/catalog";
 import type { Period } from "./period";
+import { climateIndicators, ndviIndicators, soilIndicators } from "./indicators";
 
 /**
  * `stale: true` = o valor exibido é da consulta anterior e uma nova está a caminho.
@@ -62,6 +63,26 @@ export function useAreaEnvironment(target: AreaTarget | null, period: Period) {
   // objeto estável: componentes memoizados só re-renderizam quando algum dado muda
   return useMemo(() => ({ climate, soil, vegetation, terrain, mode }), [climate, soil, vegetation, terrain, mode]);
 }
+
+export type AreaEnv = ReturnType<typeof useAreaEnvironment>;
+
+/** Indicadores do período (clima, solo, vegetação, relevo) calculados uma vez e compartilhados pelos painéis. */
+export function useEnvSummary(env: AreaEnv, period: Period) {
+  const { climate, soil, vegetation, terrain } = env;
+  const { start, end } = period;
+  return useMemo(() => {
+    const ci = climate.status === "ready" ? climateIndicators(climate.data.records.filter((r) => r.date >= start && r.date <= end)) : null;
+    const si = soil.status === "ready" && soil.data.origin !== "indisponivel" ? soilIndicators(soil.data.records) : null;
+    const ni =
+      vegetation.status === "ready" && vegetation.data.origin !== "indisponivel"
+        ? ndviIndicators(vegetation.data.records.filter((r) => r.date >= start && r.date <= end))
+        : null;
+    const t = terrain.status === "ready" ? terrain.data : null;
+    const anySimulated = [climate, soil, vegetation].some((l) => l.status === "ready" && (l.data as { origin: string }).origin === "simulado");
+    return { ci, si, ni, t, anySimulated };
+  }, [climate, soil, vegetation, terrain, start, end]);
+}
+export type EnvSummary = ReturnType<typeof useEnvSummary>;
 
 /** Data efetivamente exibida para cada camada temporal ativa do GIBS. */
 export function useLayerDates(layers: EnvLayer[], requested: string) {

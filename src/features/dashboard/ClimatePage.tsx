@@ -16,7 +16,6 @@ import { ClimateChart } from "./components/ClimateChart";
 import { AlertsPanel } from "./components/AlertsPanel";
 import { VegetationCard } from "./components/VegetationCard";
 import { SoilMoistureCard } from "./components/SoilMoistureCard";
-import { DataSourcesCard } from "./components/DataSourcesCard";
 
 export function ClimatePage() {
   const property = useSelectedProperty();
@@ -54,7 +53,7 @@ export function ClimatePage() {
       <EmptyState
         icon={<MapPinned />}
         title="Nenhuma propriedade cadastrada"
-        description="Cadastre uma propriedade para ver o histórico climático da região."
+        description="Cadastre uma propriedade para ver o clima."
         action={
           <Link to="/propriedades/nova" className={buttonVariants()}>
             Cadastrar propriedade
@@ -119,7 +118,6 @@ export function ClimatePage() {
             <SoilMoistureCard soil={data.soil} />
             <VegetationCard vegetation={data.vegetation} />
           </div>
-          <DataSourcesCard climate={data.climate} soil={data.soil} vegetation={data.vegetation} />
         </div>
       )}
     </>

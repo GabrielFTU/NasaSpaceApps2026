@@ -1,9 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { Place } from "@/services/zarc";
+import { ZarcPlacePicker } from "@/features/zarc/ZarcPlacePicker";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, ChevronRight, CloudRain, Droplet, Layers, Leaf, MapPinned, Pencil, Play, Plus, Ruler, Sprout, Target, Thermometer } from "lucide-react";
 import { useAppStore, useSelectedProperty } from "@/app/store";
 import { DataOriginBadge, EmptyState, ErrorState } from "@/components/shared";
-import { ZARC_ORIGIN_TITLE, ZarcSourceNote } from "@/features/zarc/ZarcCalendar";
+import { ZARC_ORIGIN_TITLE } from "@/features/zarc/ZarcCalendar";
 import { ZarcExplorer } from "@/features/zarc/ZarcExplorer";
 import { useZarc } from "@/features/zarc/useZarc";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -16,6 +18,7 @@ import type { PriorityKey } from "@/types";
 import { useEnvironmentalData } from "./useEnvironmentalData";
 import { lastNDays, mean, sum } from "./climateStats";
 import { KpiTile } from "./components/KpiTile";
+import { ForecastPanel } from "./components/ForecastPanel";
 import { ScenarioSummary } from "@/features/rotations/components/ScenarioSummary";
 
 const C = { temp: "#eb6834", rain: "#2a78d6", rh: "#1baf7a", ndvi: "#5aa300" };
@@ -29,7 +32,12 @@ export function DashboardPage() {
   const property = useSelectedProperty();
   const analyses = useAppStore((s) => s.analyses);
   const data = useEnvironmentalData(property);
-  const zarc = useZarc(property);
+  // município do ZARC: por padrão o da fazenda; a pessoa pode consultar outro
+  const [zarcPlace, setZarcPlace] = useState<Place | null>(null);
+  useEffect(() => setZarcPlace(null), [property?.id]);
+  const homePlace: Place | null = property ? { city: property.city, state: property.state } : null;
+  const activePlace = zarcPlace ?? homePlace;
+  const zarc = useZarc(property, activePlace);
   const navigate = useNavigate();
   const [howOpen, setHowOpen] = useState(false);
 
@@ -66,8 +74,8 @@ export function DashboardPage() {
     return (
       <EmptyState
         icon={<MapPinned />}
-        title="Cadastre sua primeira propriedade"
-        description="Desenhe a área no mapa de satélite para começar a acompanhar clima e vegetação."
+        title="Cadastre sua propriedade"
+        description="Desenhe a área no mapa para começar."
         action={
           <Link to="/propriedades/nova" className={buttonVariants()}>
             <Plus /> Cadastrar propriedade
@@ -88,17 +96,25 @@ export function DashboardPage() {
   return (
     <div className="flex flex-col gap-5">
       {/* Hero */}
-      <section className="relative overflow-hidden rounded-xl border border-border bg-white shadow-card">
+      <section className="relative overflow-hidden rounded-xl border border-border bg-white bg-orbit shadow-card">
         <div className="absolute inset-y-0 right-0 hidden w-[58%] md:block">
           <PropertyMap lat={property.latitude} lon={property.longitude} boundary={property.boundary} interactive={false} className="h-full rounded-none" />
           <div className="pointer-events-none absolute inset-0 z-[400] bg-gradient-to-r from-white via-white/30 to-transparent" />
+          <span className="glass-dark absolute bottom-4 right-4 z-[401] flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-white">
+            <MapPinned className="size-3.5" /> {property.name} · {fmt.n1(property.areaHa)} ha
+          </span>
         </div>
         <div className="relative z-[401] flex flex-col gap-4 p-6 sm:p-8 md:max-w-[52%]">
-          <p className="text-[13px] font-bold uppercase tracking-wider text-primary">Bem-vindo ao Semeia</p>
-          <h2 className="text-3xl font-bold leading-[1.1] tracking-tight text-brand-dark sm:text-4xl">Planeje rotações mais resilientes</h2>
-          <p className="max-w-md text-[15px] text-muted-foreground">
-            Dados da NASA + seu solo = a melhor rotação para a sua área.
+          <p className="flex items-center gap-3 text-[12px] font-bold uppercase tracking-[0.18em] text-primary">
+            <span className="h-0.5 w-8 rounded-full bg-gradient-to-r from-primary to-brand-lime" aria-hidden />
+            Bem-vindo ao Semeia
           </p>
+          <h2 className="text-[40px] font-extrabold leading-[1.02] text-brand-dark sm:text-[52px]">
+            Do satélite
+            <br />
+            <span className="bg-gradient-to-r from-primary to-brand-lime bg-clip-text text-transparent">à semente.</span>
+          </h2>
+          <p className="max-w-sm text-[15px] leading-relaxed text-muted-foreground">Rotações mais resilientes, guiadas por dados da NASA.</p>
           <div className="flex flex-wrap gap-3 pt-1">
             <Link to={`/analise?propriedade=${property.id}`} className={buttonVariants({ size: "lg" })}>
               <Plus /> Nova análise
@@ -113,7 +129,11 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {/* Indicadores */}
+      {/* Previsão — o que o agricultor decide hoje */}
+      <ForecastPanel lat={property.latitude} lon={property.longitude} />
+
+      {/* Indicadores observados (NASA) */}
+      <h2 className="-mb-2 mt-1 text-lg font-semibold">Últimos 30 dias</h2>
       {data.status === "error" ? (
         <ErrorState message={data.error} onRetry={data.reload} />
       ) : (
@@ -174,20 +194,17 @@ export function DashboardPage() {
       <Card className="min-w-0 p-5">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold tracking-tight">Janelas de plantio · ZARC</h2>
-            <p className="text-[13px] text-muted-foreground">
-              Zoneamento oficial do MAPA para {property.city}/{property.state} — plantar na janela garante acesso ao Proagro e ao seguro rural subvencionado.
-            </p>
+            <h2 className="text-lg font-semibold tracking-tight">Janelas de plantio</h2>
+            {homePlace && activePlace && (
+              <div className="mt-0.5">
+                <ZarcPlacePicker home={homePlace} value={activePlace} onChange={(p) => setZarcPlace(p.city === homePlace.city && p.state === homePlace.state ? null : p)} />
+              </div>
+            )}
           </div>
           {zarc && <DataOriginBadge origin={zarc.origin} title={ZARC_ORIGIN_TITLE} />}
         </div>
         {zarc ? (
-          <>
-            <ZarcExplorer property={property} zarc={zarc} />
-            <div className="mt-3">
-              <ZarcSourceNote zarc={zarc} />
-            </div>
-          </>
+          <ZarcExplorer property={property} zarc={zarc} place={activePlace ?? undefined} />
         ) : (
           <div className="h-40 animate-pulse rounded-md bg-muted" aria-label="Carregando ZARC" />
         )}
@@ -242,14 +259,12 @@ export function DashboardPage() {
         <Card className="min-w-0 p-5">
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h2 className="text-lg font-semibold tracking-tight">Comparativo de estratégias de rotação</h2>
-              <p className="text-[13px] text-muted-foreground">
-                {latest ? "Última análise · índices simulados" : "Solo, clima e suas prioridades."}
-              </p>
+              <h2 className="text-lg font-semibold tracking-tight">Estratégias de rotação</h2>
+              <p className="text-[13px] text-muted-foreground">{latest ? "Última análise" : "Solo, clima e prioridades."}</p>
             </div>
             {latest && (
               <Link to={`/analise/${latest.id}`} className={buttonVariants({ variant: "outline-primary", size: "sm" })}>
-                Ver análise completa <ArrowRight />
+                Ver análise <ArrowRight />
               </Link>
             )}
           </div>
@@ -298,9 +313,9 @@ export function DashboardPage() {
       >
         <ol className="flex flex-col gap-3 text-sm">
           {[
-            ["Desenhe sua área", "Clique nos cantos no mapa de satélite."],
-            ["Acompanhe", "Clima, umidade do solo e vegetação da NASA."],
-            ["Compare", "Sua rotação atual contra duas alternativas."],
+            ["Desenhe", "Marque sua área no mapa."],
+            ["Acompanhe", "Clima, solo e vegetação."],
+            ["Compare", "Sua rotação contra duas alternativas."],
           ].map(([t, d], i) => (
             <li key={t} className="flex gap-3">
               <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-[13px] font-bold text-white">{i + 1}</span>
@@ -312,7 +327,7 @@ export function DashboardPage() {
           ))}
         </ol>
         <p className="mt-4 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
-          Índices simulados para comparar cenários — não substituem o agrônomo.
+          Índices simulados — não substituem o agrônomo.
         </p>
       </Dialog>
     </div>

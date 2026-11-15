@@ -22,8 +22,11 @@ const ORIGIN_TEXT: Record<DataOrigin, string> = { real: "NASA", simulado: "simul
 
 export function KpiTile({ label, icon, value, unit, delta, caption, spark, sparkKind, color, origin, loading }: KpiTileProps) {
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-border bg-white p-4 shadow-card">
-      <span className="mt-0.5 shrink-0 [&_svg]:size-7" style={{ color }}>
+    <div className="flex items-start gap-3 rounded-lg border border-border bg-white p-4 shadow-card transition-shadow hover:shadow-raised">
+      <span
+        className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg [&_svg]:size-5"
+        style={{ color, backgroundColor: `color-mix(in srgb, ${color} 12%, white)` }}
+      >
         {icon}
       </span>
       <div className="min-w-0 flex-1">

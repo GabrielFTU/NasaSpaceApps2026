@@ -1,20 +1,21 @@
 import { useEffect, useState } from "react";
 import { loadLegendScale, type LegendScale, type UnitConversion } from "@/services/environment/colormap";
-import { CalendarClock, ChevronDown, ChevronLeft, ChevronRight, CircleSlash, ExternalLink, Loader2, Minus, MousePointer2, Satellite, ZoomIn } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/form";
-import { Segmented } from "@/components/ui/misc";
+import { ChevronDown, ChevronLeft, ChevronRight, CircleSlash, Info, Loader2, ZoomIn } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/format";
+import { fmt, formatDate } from "@/lib/format";
 import { SLOPE_CLASSES, TEXTURE_STYLE, type EnvLayer, type LayerId } from "@/services/environment/catalog";
 import type { SnappedDate } from "@/services/environment/gibsTime";
-import type { Load } from "../hooks";
+import type { AreaEnv, EnvSummary, Load } from "../hooks";
 import { availableEnd } from "../period";
 import type { LayerChip } from "./LayerBar";
 
 interface Props {
   layer: EnvLayer;
   chip: LayerChip;
+  env: AreaEnv;
+  summary: EnvSummary;
+  texture: string;
+  hasBoundary: boolean;
   opacity: number;
   onOpacity: (v: number) => void;
   onVariant: (id: LayerId) => void;
@@ -22,127 +23,296 @@ interface Props {
   mapDate: string;
   onMapDate: (d: string) => void;
   onStep: (dir: -1 | 1) => void;
-  zoom: number;
   tileError: boolean;
 }
 
-/** Cartão único da camada ativa: o que mostra, como ler, legenda, data, transparência e fonte. */
+type Tone = "good" | "mid" | "low";
+interface Hero {
+  value: string | null;
+  unit?: string;
+  badge?: { label: string; tone: Tone };
+  note?: string;
+  date?: string | null;
+  load?: Load<unknown>;
+  unavailable?: string;
+}
+
+const n = (x: number | null | undefined, f = fmt.n1) => (x === null || x === undefined ? null : f(x));
+
+/** Valor principal da camada ativa, calculado com os dados da área selecionada. */
+function heroFor(layer: EnvLayer, chip: LayerChip, env: AreaEnv, s: EnvSummary, texture: string, hasBoundary: boolean): Hero {
+  const { ci, si, ni, t } = s;
+  switch (chip.key) {
+    case "ndvi": {
+      const v = ni?.last?.ndvi ?? null;
+      const badge: Hero["badge"] =
+        v === null ? undefined : v < 0.3 ? { label: "Vigor baixo", tone: "low" } : v < 0.6 ? { label: "Vigor moderado", tone: "mid" } : { label: "Vigor alto", tone: "good" };
+      return {
+        value: n(v, fmt.n2),
+        badge,
+        date: ni?.last?.date,
+        load: env.vegetation,
+        unavailable: env.vegetation.status === "ready" && env.vegetation.data.origin === "indisponivel" ? env.vegetation.data.reason : undefined,
+      };
+    }
+    case "precip":
+      return { value: n(ci?.totalPrecip, fmt.n0), unit: "mm", note: ci ? `acumulado no período · ${ci.rainyDays} dias com chuva` : undefined, load: env.climate };
+    case "soilwater": {
+      const root = layer.id === "smap_root";
+      return {
+        value: n(root ? si?.last?.rootZone : si?.last?.surface, fmt.n2),
+        unit: "m³/m³",
+        note: root ? "zona das raízes (0–100 cm)" : "superfície (0–5 cm)",
+        date: si?.last?.date,
+        load: env.soil,
+        unavailable: env.soil.status === "ready" && env.soil.data.origin === "indisponivel" ? env.soil.data.reason : undefined,
+      };
+    }
+    case "temp":
+      return { value: n(ci?.meanTemp), unit: "°C", note: ci ? `média do período · ${n(ci.minTemp) ?? "—"} a ${n(ci.maxTemp) ?? "—"} °C` : undefined, load: env.climate };
+    case "rh":
+      return { value: n(ci?.meanRh, fmt.n0), unit: "%", note: "média do período", load: env.climate };
+    case "elevation":
+      return {
+        value: n(t?.elevation.mean, fmt.n0),
+        unit: "m",
+        note: t ? `de ${fmt.n0(t.elevation.min)} a ${fmt.n0(t.elevation.max)} m` : undefined,
+        load: hasBoundary ? env.terrain : undefined,
+        unavailable: hasBoundary ? undefined : "Desenhe o contorno do talhão para calcular.",
+      };
+    case "slope": {
+      const dom = t ? t.slopeClasses.indexOf(Math.max(...t.slopeClasses)) : -1;
+      return {
+        value: n(t?.slope.mean),
+        unit: "%",
+        badge: dom >= 0 ? { label: SLOPE_CLASSES[dom].label, tone: dom <= 1 ? "good" : dom <= 3 ? "mid" : "low" } : undefined,
+        note: "inclinação média",
+        load: hasBoundary ? env.terrain : undefined,
+        unavailable: hasBoundary ? undefined : "Desenhe o contorno do talhão para calcular.",
+      };
+    }
+    default:
+      return { value: TEXTURE_STYLE[texture]?.label ?? null, note: "textura cadastrada" };
+  }
+}
+
+const TONE: Record<Tone, string> = {
+  good: "bg-primary-soft text-primary-soft-foreground",
+  mid: "bg-[#eef6d9] text-[#46600b]",
+  low: "bg-warning-soft text-warning",
+};
+
+/** Painel da camada ativa: valor da área, o que significa, data e fonte. Ajustes técnicos ficam recolhidos. */
 export function ActiveLayerCard(p: Props) {
   const { layer, chip } = p;
-  const [min, setMin] = useState(false);
-  const [about, setAbout] = useState(false);
+  const [details, setDetails] = useState(false);
+  const [help, setHelp] = useState(false);
   const Icon = chip.icon;
   const temporal = layer.render.kind === "gibs" && layer.temporal !== "static";
+  const h = heroFor(layer, chip, p.env, p.summary, p.texture, p.hasBoundary);
+  const loading = !h.unavailable && h.value === null && (!h.load || h.load.status === "loading" || h.load.status === "idle");
+  const stale = h.load?.status === "ready" && !!h.load.stale;
+  const shown = p.date?.status === "ready" ? p.date.data.date : null;
+  const obs = h.date ?? shown;
 
-  if (min)
-    return (
-      <button
-        type="button"
-        onClick={() => setMin(false)}
-        className="pointer-events-auto flex cursor-pointer items-center gap-2 rounded-full bg-surface/95 px-3 py-2 text-[13px] font-medium shadow-md backdrop-blur"
-      >
-        <Icon className="size-4 text-primary" /> {chip.label} · ver legenda
-      </button>
-    );
+  const probe = layer.render.kind === "gibs" ? layer.render.probe : undefined;
 
   return (
-    <div className="pointer-events-auto w-[min(340px,calc(100vw-1.5rem))] rounded-lg border border-border bg-surface/95 shadow-md backdrop-blur">
-      <div className="flex items-start gap-2 px-3 pt-2.5">
-        <Icon className="mt-0.5 size-4 shrink-0 text-primary" />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">{chip.label}</p>
-          <p className="text-[13px] leading-snug text-muted-foreground">{chip.what}</p>
-        </div>
-        <Button variant="ghost" size="icon-sm" className="-mr-1 -mt-1" onClick={() => setMin(true)} aria-label="Minimizar legenda" title="Minimizar">
-          <Minus />
-        </Button>
-      </div>
+    <section className="flex flex-col rounded-lg border border-border bg-surface p-5 shadow-card" aria-label={`Camada: ${chip.label}`}>
+      <header className="flex items-center gap-2.5">
+        <Icon className="size-[18px] text-primary" />
+        <h2 className="flex-1 text-[15px] font-semibold">{layer.id === "ndvi" ? "Vegetação (NDVI)" : chip.label}</h2>
+        <button
+          type="button"
+          onClick={() => setHelp((v) => !v)}
+          aria-expanded={help}
+          aria-label="Como ler o mapa"
+          title="Como ler o mapa"
+          className={cn("cursor-pointer rounded-full p-1 transition-colors hover:bg-muted hover:text-foreground", help ? "text-primary" : "text-subtle-foreground")}
+        >
+          <Info className="size-4" />
+        </button>
+      </header>
 
-      <div className="space-y-2.5 px-3 pb-3 pt-2">
-        {chip.layers.length > 1 && (
-          <Segmented
-            aria-label="Profundidade"
-            value={layer.id}
-            onChange={p.onVariant}
-            options={[
-              { value: "smap_surface", label: "Superfície (0–5 cm)" },
-              { value: "smap_root", label: "Raízes (0–100 cm)" },
-            ]}
-          />
-        )}
+      {help && (
+        <p className="animate-in mt-3 rounded-md bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+          {chip.read}
+          {probe && <> Passe o mouse no mapa para ler o valor de cada ponto.</>}
+        </p>
+      )}
 
-        <Legend layer={layer} zoom={p.zoom} />
-        <p className="text-xs leading-snug text-foreground">{chip.read}</p>
-        {layer.render.kind === "gibs" && layer.render.probe && (
-          <p className="flex items-center gap-1.5 text-xs font-medium text-primary" title={`Lido da imagem da NASA pela paleta oficial · precisão ${layer.render.probe.precision}`}>
-            <MousePointer2 className="size-3.5" /> Passe o mouse no mapa para ver o valor ({layer.render.probe.unit}).
+      <div className={cn("mt-5 min-h-[52px] transition-opacity", stale && "opacity-60")}>
+        {h.unavailable ? (
+          <p className="flex items-start gap-1.5 text-[13px] text-muted-foreground">
+            <CircleSlash className="mt-0.5 size-3.5 shrink-0" /> {h.unavailable}
           </p>
-        )}
-
-        {temporal && (
-          <div>
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon-sm" onClick={() => p.onStep(-1)} aria-label="Imagem anterior" title="Imagem anterior">
-                <ChevronLeft />
-              </Button>
-              <Input
-                type="date"
-                aria-label="Data da imagem"
-                className="h-8 flex-1 text-[13px]"
-                value={p.mapDate}
-                min="2000-03-01"
-                max={availableEnd()}
-                onChange={(e) => e.target.value && p.onMapDate(e.target.value)}
-              />
-              <Button variant="outline" size="icon-sm" onClick={() => p.onStep(1)} disabled={p.mapDate >= availableEnd()} aria-label="Próxima imagem" title="Próxima imagem">
-                <ChevronRight />
-              </Button>
-            </div>
-            <DateLine layer={layer} date={p.date} error={p.tileError} />
+        ) : loading ? (
+          <div className="h-11 w-32 animate-pulse rounded-md bg-muted" aria-label="Carregando" />
+        ) : h.load?.status === "error" ? (
+          <p className="text-[13px] text-danger">Não disponível agora.</p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <p className="tabular font-display text-[44px] font-bold leading-none tracking-tight">
+              {h.value ?? "—"}
+              {h.unit && <span className="ml-1.5 text-lg font-semibold text-muted-foreground">{h.unit}</span>}
+            </p>
+            {h.badge && <span className={cn("rounded-full px-3 py-1 text-[13px] font-semibold", TONE[h.badge.tone])}>{h.badge.label}</span>}
           </div>
         )}
+        {h.note && !h.unavailable && <p className="mt-1.5 text-xs text-muted-foreground">{h.note}</p>}
+      </div>
 
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="shrink-0">Transparência</span>
-          <input
-            type="range"
-            min={0.1}
-            max={1}
-            step={0.05}
-            value={p.opacity}
-            onChange={(e) => p.onOpacity(Number(e.target.value))}
-            className="h-1 w-full cursor-pointer"
-            aria-label="Opacidade da camada"
-          />
-          <span className="tabular w-8 text-right">{Math.round(p.opacity * 100)}%</span>
-        </label>
+      <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground">{chip.what}</p>
 
-        <div className="border-t border-border pt-2">
+      <p className="tabular mt-5 border-t border-border pt-4 text-xs text-subtle-foreground" title={`${layer.product} · ${layer.spatialResolution}`}>
+        {obs ? formatDate(obs, { day: "2-digit", month: "short", year: "numeric" }) : "Sem data"} <span className="mx-1">·</span> {layer.source}
+      </p>
+
+      {(temporal || chip.layers.length > 1 || layer.render.kind !== "user") && (
+        <>
           <button
             type="button"
-            onClick={() => setAbout(!about)}
-            className="flex w-full cursor-pointer items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground"
-            aria-expanded={about}
+            onClick={() => setDetails((v) => !v)}
+            aria-expanded={details}
+            className="mt-3 flex cursor-pointer items-center gap-1 self-start text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
-            Sobre os dados · {layer.source}
-            <ChevronDown className={cn("size-3.5 transition-transform", about && "rotate-180")} />
+            Ajustes do mapa
+            <ChevronDown className={cn("size-3.5 transition-transform duration-200", details && "rotate-180")} />
           </button>
-          {about && (
-            <div className="animate-in mt-1.5 space-y-1 text-xs leading-relaxed text-muted-foreground">
-              <p className="text-foreground">{layer.product}</p>
-              <p>
-                Detalhe: <span className="text-foreground">{layer.spatialResolution}</span> · Frequência: <span className="text-foreground">{layer.temporalLabel}</span>
-              </p>
-              <p>{layer.limitations}</p>
-              {layer.sourceUrl && (
-                <a href={layer.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
-                  Sobre o produto <ExternalLink className="size-3" />
-                </a>
+
+          {details && (
+            <div className="animate-in mt-3 space-y-3 text-xs">
+              {chip.layers.length > 1 && (
+                <Row label="Profundidade">
+                  <div className="flex gap-1">
+                    {(
+                      [
+                        ["smap_surface", "Superfície"],
+                        ["smap_root", "Raízes"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => p.onVariant(id)}
+                        className={cn(
+                          "cursor-pointer rounded-full px-2.5 py-1 font-medium transition-colors",
+                          layer.id === id ? "bg-foreground text-white" : "text-muted-foreground hover:bg-muted",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </Row>
+              )}
+
+              {temporal && (
+                <Row label="Imagem">
+                  <div className="flex items-center gap-0.5">
+                    <IconBtn onClick={() => p.onStep(-1)} label="Imagem anterior">
+                      <ChevronLeft />
+                    </IconBtn>
+                    <label className="relative cursor-pointer rounded-full px-2 py-1 font-medium tabular hover:bg-muted">
+                      {shown ? formatDate(shown, layer.temporal === "monthly" ? { month: "short", year: "numeric" } : { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                      <input
+                        type="date"
+                        aria-label="Data da imagem"
+                        className="absolute inset-0 cursor-pointer opacity-0"
+                        value={p.mapDate}
+                        min="2000-03-01"
+                        max={availableEnd()}
+                        onChange={(e) => e.target.value && p.onMapDate(e.target.value)}
+                      />
+                    </label>
+                    <IconBtn onClick={() => p.onStep(1)} disabled={p.mapDate >= availableEnd()} label="Próxima imagem">
+                      <ChevronRight />
+                    </IconBtn>
+                  </div>
+                </Row>
+              )}
+              {temporal && <DateIssue layer={layer} date={p.date} error={p.tileError} />}
+
+              {layer.render.kind !== "user" && (
+                <Row label="Opacidade">
+                  <div className="flex w-36 items-center gap-2">
+                    <input
+                      type="range"
+                      min={0.1}
+                      max={1}
+                      step={0.05}
+                      value={p.opacity}
+                      onChange={(e) => p.onOpacity(Number(e.target.value))}
+                      className="h-1 w-full cursor-pointer"
+                      aria-label="Opacidade da camada"
+                    />
+                    <span className="tabular w-8 text-right text-muted-foreground">{Math.round(p.opacity * 100)}%</span>
+                  </div>
+                </Row>
               )}
             </div>
           )}
-        </div>
-      </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex min-h-7 items-center justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function IconBtn({ onClick, disabled, label, children }: { onClick: () => void; disabled?: boolean; label: string; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className="flex size-6 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-30 [&_svg]:size-3.5"
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Paleta oficial da camada (já na unidade do app), para colorir a área com o valor médio. */
+export function useLayerScale(layer: EnvLayer | null) {
+  const from = layer?.render.kind === "gibs" ? layer.render.legendFrom : undefined;
+  const [scale, setScale] = useState<LegendScale | null>(null);
+  useEffect(() => {
+    setScale(null);
+    if (!from) return;
+    let alive = true;
+    loadLegendScale(from.colormap, from.conversion)
+      .then((s) => alive && setScale(s))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [from?.colormap]);
+  return scale;
+}
+
+/** Cor da faixa da paleta que contém `v`. */
+export function colorAt(scale: LegendScale, v: number) {
+  let c = scale.stops[0]?.color;
+  for (const s of scale.stops) if (v >= s.value) c = s.color;
+  return c;
+}
+
+/** Legenda compacta que flutua sobre o mapa. */
+export function MapLegend({ layer, title, zoom }: { layer: EnvLayer; title: string; zoom: number }) {
+  return (
+    <div className="pointer-events-auto w-[min(270px,calc(100vw-3rem))] rounded-md bg-white/95 px-3 py-2.5 shadow-card">
+      <p className="mb-1.5 text-xs font-semibold">{title}</p>
+      <Legend layer={layer} zoom={zoom} />
     </div>
   );
 }
@@ -160,26 +330,20 @@ function ScaleLegend({ layer, colormap, conversion }: { layer: EnvLayer; colorma
     };
   }, [colormap, conversion]);
 
-  // sem a paleta: mostra a legenda oficial e explica a conversão
   if (state.failed && layer.render.kind === "gibs")
-    return (
-      <>
-        <img src={layer.render.legendUrl} alt={`Legenda oficial: ${layer.label}`} className="w-full rounded-sm bg-white" />
-        <p className="text-[11px] text-muted-foreground">Legenda oficial em Kelvin: °C = K − 273,15 (ex.: 300 K = 27 °C).</p>
-      </>
-    );
-  if (!state.scale) return <div className="h-9 animate-pulse rounded-sm bg-muted" />;
+    return <img src={layer.render.legendUrl} alt={`Legenda oficial: ${layer.label}`} className="w-full rounded-sm bg-white" />;
+  if (!state.scale) return <div className="h-7 animate-pulse rounded-sm bg-muted" />;
 
   const { stops, min, max, unit } = state.scale;
   const span = max - min || 1;
   const gradient = `linear-gradient(to right, ${stops.map((s) => `${s.color} ${(((s.value - min) / span) * 100).toFixed(2)}%`).join(", ")})`;
-  const step = span > 120 ? 20 : 10;
+  const step = span > 120 ? 40 : span > 60 ? 20 : 10;
   const ticks: number[] = [];
   for (let t = Math.ceil(min / step) * step; t <= max; t += step) ticks.push(t);
 
   return (
     <div>
-      <div className="h-3 w-full rounded-sm" style={{ background: gradient }} role="img" aria-label={`Escala de ${fmtN(min)} a ${fmtN(max)} ${unit}`} />
+      <div className="h-2.5 w-full rounded-sm" style={{ background: gradient }} role="img" aria-label={`Escala de ${Math.round(min)} a ${Math.round(max)} ${unit}`} />
       <div className="relative mt-0.5 h-4 text-[11px] text-muted-foreground">
         {ticks.map((t) => (
           <span key={t} className="tabular absolute -translate-x-1/2" style={{ left: `${((t - min) / span) * 100}%` }}>
@@ -187,12 +351,10 @@ function ScaleLegend({ layer, colormap, conversion }: { layer: EnvLayer; colorma
           </span>
         ))}
       </div>
-      <p className="text-right text-[11px] font-medium text-foreground">{unit}</p>
+      <p className="text-right text-[10px] text-muted-foreground">{unit}</p>
     </div>
   );
 }
-
-const fmtN = (v: number) => Math.round(v).toString();
 
 function Legend({ layer, zoom }: { layer: EnvLayer; zoom: number }) {
   if (layer.render.kind === "gibs" && layer.render.legendFrom)
@@ -206,13 +368,12 @@ function Legend({ layer, zoom }: { layer: EnvLayer; zoom: number }) {
             <li key={c.label} className="flex items-center gap-1.5">
               <span className="inline-block size-2.5 shrink-0 rounded-sm" style={{ background: c.color }} />
               <span className="truncate">{c.label}</span>
-              <span className="tabular ml-auto text-muted-foreground">{c.range}</span>
             </li>
           ))}
         </ul>
         {zoom < 12 && (
-          <p className="flex items-center gap-1.5 text-xs font-medium text-warning">
-            <ZoomIn className="size-3.5" /> Aproxime o mapa para ver a declividade.
+          <p className="mt-1.5 flex items-center gap-1.5 text-[11px] font-medium text-warning">
+            <ZoomIn className="size-3.5" /> Aproxime o mapa para ver.
           </p>
         )}
       </>
@@ -229,40 +390,18 @@ function Legend({ layer, zoom }: { layer: EnvLayer; zoom: number }) {
   );
 }
 
-function DateLine({ layer, date, error }: { layer: EnvLayer; date?: Load<SnappedDate>; error: boolean }) {
-  const base = "mt-1 flex items-center gap-1.5 text-[11px]";
-  if (!date || date.status === "loading" || date.status === "idle")
+/** Só aparece quando há algo a avisar sobre a imagem — o caso normal fica em silêncio. */
+function DateIssue({ layer, date, error }: { layer: EnvLayer; date?: Load<SnappedDate>; error: boolean }) {
+  const base = "flex items-center justify-end gap-1.5 text-[11px]";
+  if (!date || date.status === "loading" || date.status === "idle" || (date.status === "ready" && date.stale))
     return (
       <p className={cn(base, "text-muted-foreground")}>
-        <Loader2 className="size-3.5 animate-spin" /> Procurando a imagem mais próxima…
+        <Loader2 className="size-3 animate-spin" /> Procurando imagem…
       </p>
     );
-  if (date.status === "error")
-    return (
-      <p className={cn(base, "text-danger")}>
-        <CircleSlash className="size-3.5" /> Não foi possível consultar a NASA agora.
-      </p>
-    );
-  const d = date.data;
-  if (!d.date)
-    return (
-      <p className={cn(base, "text-warning")}>
-        <CircleSlash className="size-3.5" /> Não há imagem publicada perto desta data.
-      </p>
-    );
-  const shown = layer.temporal === "monthly" ? formatDate(d.date, { month: "long", year: "numeric" }) : formatDate(d.date);
-  return (
-    <>
-      <p className={cn(base, "text-foreground")}>
-        {date.stale ? <Loader2 className="size-3.5 animate-spin" /> : <Satellite className="size-3.5 text-success" />}
-        Imagem real da NASA de {layer.temporal === "16day" ? `16 dias a partir de ${shown}` : shown}
-      </p>
-      {!d.exact && layer.temporal === "daily" && (
-        <p className={cn(base, "mt-0.5 text-warning")}>
-          <CalendarClock className="size-3.5" /> Sem imagem no dia escolhido — mostrando a mais próxima.
-        </p>
-      )}
-      {error && <p className={cn(base, "mt-0.5 text-danger")}>Parte da imagem não carregou.</p>}
-    </>
-  );
+  if (date.status === "error") return <p className={cn(base, "text-danger")}>NASA indisponível agora.</p>;
+  if (!date.data.date) return <p className={cn(base, "text-warning")}>Sem imagem perto desta data.</p>;
+  if (error) return <p className={cn(base, "text-danger")}>Parte da imagem não carregou.</p>;
+  if (!date.data.exact && layer.temporal === "daily") return <p className={cn(base, "text-subtle-foreground")}>Mostrando a imagem mais próxima.</p>;
+  return null;
 }

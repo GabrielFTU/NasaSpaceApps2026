@@ -13,7 +13,7 @@ import { formatDateTime } from "@/lib/format";
 import type { Analysis } from "@/types";
 import { SCENARIO_COLOR } from "@/features/rotations/components/ScenarioSummary";
 
-const SHORT = { atual: "Atual", a: "A", b: "B" } as const;
+const SHORT = { atual: "Atual", retorno: "Rentável", estavel: "Estável", equilibrio: "Moderado", a: "A", b: "B" } as const;
 
 export function HistoryPage() {
   const analyses = useAppStore((s) => s.analyses);
@@ -81,8 +81,8 @@ export function HistoryPage() {
                   {a.scenarios.map((s) => (
                     <span key={s.key} className="flex flex-col items-center rounded-md bg-muted px-3 py-1.5" title={s.label}>
                       <span className="text-[11px] text-muted-foreground">{SHORT[s.key]}</span>
-                      <span className="text-base font-bold" style={{ color: SCENARIO_COLOR[s.key] }}>
-                        {s.overall}
+                      <span className="tabular text-base font-bold" style={{ color: SCENARIO_COLOR[s.key] }}>
+                        {s.economics ? `R$ ${(s.economics.netPerYear / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil` : s.overall}
                       </span>
                     </span>
                   ))}

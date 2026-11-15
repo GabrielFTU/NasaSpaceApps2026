@@ -5,11 +5,12 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { DataOrigin } from "@/types";
 
-export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({ title, description, actions, eyebrow }: { title: string; description?: ReactNode; actions?: ReactNode; eyebrow?: string }) {
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        <h1 className="text-2xl font-bold tracking-tight text-brand-dark">{title}</h1>
+        {eyebrow && <p className="mb-1 text-[12px] font-bold uppercase tracking-wider text-primary">{eyebrow}</p>}
+        <h1 className="text-2xl font-bold tracking-tight text-brand-dark sm:text-[28px]">{title}</h1>
         {description && <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>}
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
@@ -19,8 +20,8 @@ export function PageHeader({ title, description, actions }: { title: string; des
 
 export function EmptyState({ icon, title, description, action, className }: { icon: ReactNode; title: string; description: string; action?: ReactNode; className?: string }) {
   return (
-    <div className={cn("flex flex-col items-center justify-center rounded-lg border border-dashed border-input bg-surface px-6 py-12 text-center", className)}>
-      <div className="mb-3 flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground [&_svg]:size-5">{icon}</div>
+    <div className={cn("flex flex-col items-center justify-center rounded-lg border border-dashed border-input bg-surface bg-orbit px-6 py-14 text-center", className)}>
+      <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-primary-soft text-primary ring-8 ring-primary-soft/40 [&_svg]:size-6">{icon}</div>
       <h3 className="text-[15px] font-semibold">{title}</h3>
       <p className="mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>
       {action && <div className="mt-4">{action}</div>}
@@ -55,6 +56,8 @@ const ORIGIN_META: Record<DataOrigin, { label: string; variant: "success" | "war
 };
 
 export function DataOriginBadge({ origin, className, title }: { origin: DataOrigin; className?: string; title?: string }) {
+  // dado real é o padrão — não precisa de etiqueta; só sinalizamos exceções (simulado/indisponível)
+  if (origin === "real") return null;
   const m = ORIGIN_META[origin];
   return (
     <Badge variant={m.variant} title={title ?? m.title} className={className}>
@@ -64,19 +67,41 @@ export function DataOriginBadge({ origin, className, title }: { origin: DataOrig
   );
 }
 
+/** Ícone das fontes de satélite (POWER · SMAP · MODIS). */
 export function NasaMark({ className }: { className?: string }) {
-  const [failed, setFailed] = useState(false);
-  if (failed)
-    return (
-      <span className={cn("inline-flex aspect-square items-center justify-center rounded-full bg-[#0b3d91] text-[11px] font-black italic tracking-tight text-white", className)}>
-        NASA
-      </span>
-    );
-  return <img src="/nasa-logo.png" alt="NASA" className={cn("w-auto object-contain", className)} onError={() => setFailed(true)} />;
+  return (
+    <span
+      aria-hidden
+      className={cn("inline-flex aspect-square shrink-0 items-center justify-center rounded-full bg-space text-white ring-4 ring-space-soft [&_svg]:size-[45%]", className)}
+    >
+      <Satellite />
+    </span>
+  );
 }
 
-export function Logo({ className }: { className?: string }) {
-  return <img src="/logo-full.png" alt="Semeia" className={cn("h-9 w-auto select-none", className)} draggable={false} />;
+/** Logo oficial do NASA Space Apps Challenge (fundo transparente — usar sobre superfícies claras). */
+export function SpaceAppsLogo({ className }: { className?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <span className={cn("text-xs font-bold uppercase tracking-wider text-space", className)}>NASA Space Apps Challenge</span>;
+  return (
+    <img
+      src="/nasa-space-apps.png"
+      alt="NASA Space Apps Challenge"
+      className={cn("h-10 w-auto select-none object-contain", className)}
+      draggable={false}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+/** Marca: símbolo da folha + logotipo tipográfico na fonte display (nítido em qualquer tamanho). */
+export function Logo({ className, size = "md" }: { className?: string; size?: "sm" | "md" }) {
+  return (
+    <span className={cn("inline-flex select-none items-center gap-2", className)}>
+      <img src="/logo-mark.png" alt="" className={size === "sm" ? "h-6 w-auto" : "h-7 w-auto"} draggable={false} />
+      <span className={cn("font-display font-bold leading-none text-brand-dark", size === "sm" ? "text-[19px]" : "text-[23px]")}>Semeia</span>
+    </span>
+  );
 }
 
 export function KeyValue({ label, children }: { label: string; children: ReactNode }) {

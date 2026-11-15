@@ -156,7 +156,7 @@ export function AreaDrawer({ points, onChange, initialCenter, flyTarget = null, 
 
       {/* Controles sobre o mapa */}
       <div className="pointer-events-none absolute inset-x-3 top-3 z-[500] flex items-start justify-between gap-2">
-        <div className="pointer-events-auto rounded-md bg-white/95 px-3 py-2 shadow-md backdrop-blur">
+        <div className="pointer-events-auto rounded-md glass px-3 py-2 ">
           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Área desenhada</p>
           <p className="text-xl font-semibold leading-tight text-foreground">
             {points.length >= 3 ? `${fmt.n2(area)} ha` : "—"}
@@ -195,7 +195,7 @@ function MapButton({ onClick, disabled, label, children }: { onClick: () => void
       onClick={onClick}
       disabled={disabled}
       title={label}
-      className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md bg-white/95 px-2.5 text-[13px] font-medium text-foreground shadow-md backdrop-blur hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:size-4"
+      className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md glass px-2.5 text-[13px] font-medium text-foreground  hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:size-4"
     >
       {children}
       <span className="hidden sm:inline">{label}</span>

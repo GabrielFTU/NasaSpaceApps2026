@@ -407,7 +407,8 @@ export interface RuleHit {
 }
 
 export interface ScenarioResult {
-  key: "atual" | "a" | "b";
+  /** a/b: análises salvas antes dos critérios financeiros. */
+  key: "atual" | "retorno" | "estavel" | "equilibrio" | "a" | "b";
   label: string;
   focus: string;
   sequence: string[]; // 4 posições (2 anos), ids de cultura ou "pousio"
@@ -417,6 +418,8 @@ export interface ScenarioResult {
   benefits: string[];
   limitations: string[];
   rules: RuleHit[];
+  /** Ausente em análises salvas antes dos critérios financeiros. */
+  economics?: import("@/features/rotations/economics").ScenarioEconomics;
 }
 
 export interface Analysis {
@@ -454,4 +457,10 @@ export interface Settings {
   powerMode: PowerMode;
   autoSync: boolean;
   lastSyncAt: string | null;
+  /** Preços, produtividades e custos informados pela pessoa (sobrepõem a referência). */
+  economics?: Record<string, Partial<{ unit: "sc" | "t" | "@"; yield: number; price: number; cost: number; cv: number }>>;
+  /** Preço usado no retorno: cotação de hoje (CEPEA), projeção para a colheita ou referência. */
+  priceBasis?: "hoje" | "colheita" | "referencia";
+  /** Manejo mais difícil que a pessoa aceita na rotação (1 fácil · 2 médio · 3 difícil). */
+  maxDifficulty?: 1 | 2 | 3;
 }

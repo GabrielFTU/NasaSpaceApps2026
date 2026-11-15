@@ -62,6 +62,13 @@ export interface EnvLayer {
   /** Ordem de desenho (maior = por cima). */
   z: number;
   limitations: string;
+  /**
+   * Produtos de pixel grosso: acima deste zoom a tela inteira cabe em um único pixel e a imagem
+   * vira uma cor chapada. O mapa então deixa de desenhar o raster e mostra o valor na área.
+   */
+  detailZoom?: number;
+  /** Tamanho aproximado do pixel, para explicar a escala ("≈ 55 km"). */
+  pixel?: string;
 }
 
 const GIBS_LEGEND = "https://gibs.earthdata.nasa.gov/legends";
@@ -90,6 +97,8 @@ export const LAYERS: EnvLayer[] = [
     render: { kind: "gibs", layer: "IMERG_Precipitation_Rate", tms: "2km", legendUrl: `${GIBS_LEGEND}/GPM_Precipitation_Rate_H.png` },
     defaultOpacity: 0.7,
     z: 40,
+    detailZoom: 10,
+    pixel: "≈ 11 km",
     limitations:
       "Estimativa por satélite (micro-ondas + infravermelho), não pluviômetro. Representa taxa de chuva, não o acumulado do período. Um pixel cobre ~120 km² — não distingue talhões.",
   },
@@ -108,6 +117,8 @@ export const LAYERS: EnvLayer[] = [
     render: { kind: "gibs", layer: "SMAP_L4_Analyzed_Surface_Soil_Moisture", tms: "2km", legendUrl: `${GIBS_LEGEND}/SMAP_Analyzed_Soil_Moisture_H.png` },
     defaultOpacity: 0.65,
     z: 30,
+    detailZoom: 11,
+    pixel: "≈ 9 km",
     limitations:
       "Produto L4 = observação de satélite assimilada em modelo. Pixel de 81 km²: valor regional, não medida do talhão. Não substitui sensor ou tradagem.",
   },
@@ -126,6 +137,8 @@ export const LAYERS: EnvLayer[] = [
     render: { kind: "gibs", layer: "SMAP_L4_Analyzed_Root_Zone_Soil_Moisture", tms: "2km", legendUrl: `${GIBS_LEGEND}/SMAP_Analyzed_Soil_Moisture_H.png` },
     defaultOpacity: 0.65,
     z: 31,
+    detailZoom: 11,
+    pixel: "≈ 9 km",
     limitations: "Camada radicular é estimada pelo modelo do L4 (o satélite só enxerga os primeiros centímetros). Pixel de 9 km.",
   },
   {
@@ -158,6 +171,8 @@ export const LAYERS: EnvLayer[] = [
     },
     defaultOpacity: 0.6,
     z: 20,
+    detailZoom: 9,
+    pixel: "≈ 55 km",
     limitations:
       "Reanálise (modelo + observações), não termômetro local. Uma célula cobre vários municípios; relevo e baixadas do talhão não aparecem. Os gráficos usam a série diária da NASA POWER no ponto.",
   },
@@ -176,6 +191,8 @@ export const LAYERS: EnvLayer[] = [
     render: { kind: "gibs", layer: "AIRS_L3_Surface_Relative_Humidity_Monthly_Day", tms: "2km", legendUrl: `${GIBS_LEGEND}/AIRS_Surface_Relative_Humidity_Monthly_Day_H.png` },
     defaultOpacity: 0.6,
     z: 21,
+    detailZoom: 8,
+    pixel: "≈ 110 km",
     limitations:
       "Sondagem por satélite no horário da passagem (~13h30), quando a umidade é mais baixa que a média diária. Célula de ~110 km. Os gráficos usam RH2M diária da NASA POWER.",
   },

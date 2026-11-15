@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, MapPinned, Search, WandSparkles } from "lucide-react";
+import { ArrowLeft, Check, Loader2, MapPinned, MousePointerClick, Search, WandSparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { fmt } from "@/lib/format";
+import { polygonAreaHa } from "@/lib/geo";
 import { useAppStore } from "@/app/store";
 import { Segmented } from "@/components/ui/misc";
 import { deleteFile } from "@/lib/fileStore";
@@ -12,16 +15,40 @@ import type { CropHistoryEntry, SoilSample } from "@/types";
 import { EmptyState } from "@/components/shared";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { CheckboxCard, Field, Input, Select, Textarea } from "@/components/ui/form";
+import { ChoiceChips, Field, Input, Label, Select, Textarea, ToggleChip } from "@/components/ui/form";
 import { toast } from "@/components/ui/toast";
 import { AreaDrawer } from "@/components/maps";
 import { BRAZIL_STATES } from "@/data/sampleProperties";
-import { DRAINAGE_LABEL, SOIL_TEXTURE_LABEL } from "@/data/crops";
+import { DRAINAGE_LABEL } from "@/data/crops";
+import { SoilTexturePicker } from "./SoilTexturePicker";
 import { polygonCenter } from "@/lib/geo";
 import type { Property } from "@/types";
 import { CIANORTE_EXAMPLE, EMPTY_FORM, soilFromValues, toPropertyInput, validateProperty, type FormErrors, type PropertyFormValues } from "./validation";
 
 const NEW_ID = "nova";
+
+/** Bloco numerado do formulário; o número vira ✓ quando a etapa está completa. */
+function FormSection({ n, title, done, aside, children }: { n: number; title: string; done?: boolean; aside?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-[15px] font-semibold">
+          <span
+            className={cn(
+              "flex size-6 items-center justify-center rounded-full text-[12px] font-bold transition-colors",
+              done ? "bg-primary text-white" : "bg-muted text-muted-foreground",
+            )}
+          >
+            {done ? <Check className="size-3.5" /> : n}
+          </span>
+          {title}
+        </h2>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
 type SoilMode = "simples" | "completo";
 
 const CIANORTE_CENTER: [number, number] = [-23.6599, -52.6054];
@@ -187,92 +214,135 @@ export function PropertyFormPage() {
         </div>
 
         {/* Campos */}
-        <Card className="flex h-fit flex-col gap-4 p-5">
-          <Field label="Nome da propriedade" error={errors.name}>
-            {(p) => <Input {...p} value={values.name} onChange={(e) => set("name", e.target.value)} placeholder="Ex.: Sítio Santa Clara" />}
-          </Field>
-          <div className="grid grid-cols-[1fr_88px] gap-3">
-            <Field label="Município" error={errors.city}>
-              {(p) => (
-                <div className="flex gap-1.5">
-                  <Input {...p} value={values.city} onChange={(e) => set("city", e.target.value)} placeholder="Cianorte" onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), findCity())} />
-                  <Button variant="outline" size="icon" onClick={findCity} loading={searching} aria-label="Localizar município no mapa" title="Localizar no mapa">
-                    {!searching && <Search />}
-                  </Button>
+        <Card className="flex h-fit flex-col lg:sticky lg:top-20">
+          <div className="flex flex-col gap-6 p-5">
+            {/* 1 · Identificação */}
+            <FormSection n={1} title="Identificação" done={values.name.trim().length >= 2 && values.city.trim().length >= 2}>
+              <Field label="Nome" error={errors.name}>
+                {(p) => <Input {...p} value={values.name} onChange={(e) => set("name", e.target.value)} placeholder="Ex.: Sítio Santa Clara" />}
+              </Field>
+              <div className="grid grid-cols-[1fr_84px] gap-2">
+                <Field label="Município" error={errors.city}>
+                  {(p) => (
+                    <div className="relative">
+                      <Input
+                        {...p}
+                        value={values.city}
+                        onChange={(e) => set("city", e.target.value)}
+                        placeholder="Cianorte"
+                        className="pr-10"
+                        onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), findCity())}
+                      />
+                      <button
+                        type="button"
+                        onClick={findCity}
+                        disabled={searching}
+                        aria-label="Localizar município no mapa"
+                        title="Localizar no mapa"
+                        className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-[8px] text-muted-foreground hover:bg-primary-soft hover:text-primary disabled:opacity-50"
+                      >
+                        {searching ? <Loader2 className="size-4 animate-spin" /> : <Search className="size-4" />}
+                      </button>
+                    </div>
+                  )}
+                </Field>
+                <Field label="UF" error={errors.state}>
+                  {(p) => (
+                    <Select {...p} value={values.state} onChange={(e) => set("state", e.target.value)}>
+                      {BRAZIL_STATES.map((uf) => (
+                        <option key={uf}>{uf}</option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+              </div>
+            </FormSection>
+
+            {/* 2 · Área (desenhada no mapa) */}
+            <FormSection n={2} title="Área" done={values.boundary.length >= 3}>
+              {values.boundary.length >= 3 ? (
+                <div className="flex items-baseline justify-between rounded-[10px] bg-primary-soft/60 px-3 py-2.5">
+                  <p className="tabular text-[22px] font-bold leading-none text-brand-dark">
+                    {fmt.n1(polygonAreaHa(values.boundary))}
+                    <span className="ml-1 text-sm font-semibold">ha</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">{values.boundary.length} pontos</p>
                 </div>
+              ) : (
+                <p className={cn("flex items-center gap-2 rounded-[10px] bg-muted px-3 py-2.5 text-[13px]", errors.boundary ? "text-danger" : "text-muted-foreground")}>
+                  <MousePointerClick className="size-4 shrink-0" />
+                  <span className="hidden lg:inline">Clique nos cantos da área no mapa ao lado.</span>
+                  <span className="lg:hidden">Clique nos cantos da área no mapa acima.</span>
+                </p>
               )}
-            </Field>
-            <Field label="UF" error={errors.state}>
-              {(p) => (
-                <Select {...p} value={values.state} onChange={(e) => set("state", e.target.value)}>
-                  {BRAZIL_STATES.map((uf) => (
-                    <option key={uf}>{uf}</option>
-                  ))}
-                </Select>
-              )}
-            </Field>
+            </FormSection>
+
+            {/* 3 · Solo */}
+            <FormSection
+              n={3}
+              title="Solo"
+              aside={
+                <Segmented<SoilMode>
+                  aria-label="Nível do cadastro de solo"
+                  value={soilMode}
+                  onChange={setSoilMode}
+                  options={[
+                    { value: "simples", label: "Simples" },
+                    { value: "completo", label: "Completo" },
+                  ]}
+                />
+              }
+            >
+              {soilMode === "completo" && <p className="-mt-1 text-xs text-muted-foreground">Laudo e histórico ficam abaixo do mapa.</p>}
+              <div className="flex flex-col gap-1.5">
+                <Label>Textura</Label>
+                <SoilTexturePicker value={values.texture} onChange={(v) => set("texture", v)} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Drenagem</Label>
+                <ChoiceChips
+                  aria-label="Drenagem do solo"
+                  value={values.drainage}
+                  onChange={(v) => set("drainage", v)}
+                  options={Object.entries(DRAINAGE_LABEL).map(([value, label]) => ({ value: value as PropertyFormValues["drainage"], label }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="pH" optional error={errors.ph}>
+                  {(p) => <Input {...p} inputMode="decimal" value={values.ph} onChange={(e) => set("ph", e.target.value)} placeholder="5,5" />}
+                </Field>
+                <Field label="M.O." optional error={errors.organicMatter}>
+                  {(p) => (
+                    <div className="relative">
+                      <Input {...p} inputMode="decimal" value={values.organicMatter} onChange={(e) => set("organicMatter", e.target.value)} placeholder="1,8" className="pr-8" />
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-subtle-foreground">%</span>
+                    </div>
+                  )}
+                </Field>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Sinais na área</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  <ToggleChip checked={values.compaction} onCheckedChange={(v) => set("compaction", v)}>
+                    Compactação
+                  </ToggleChip>
+                  <ToggleChip checked={values.erosionHistory} onCheckedChange={(v) => set("erosionHistory", v)}>
+                    Erosão
+                  </ToggleChip>
+                </div>
+              </div>
+              <Field label="Observações" optional error={errors.notes}>
+                {(p) => <Textarea {...p} rows={2} value={values.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Ex.: baixada encharca no verão" />}
+              </Field>
+            </FormSection>
           </div>
 
-          <div className="h-px bg-border" />
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-semibold">Solo</p>
-            <Segmented<SoilMode>
-              aria-label="Nível do cadastro de solo"
-              value={soilMode}
-              onChange={setSoilMode}
-              options={[
-                { value: "simples", label: "Cadastro simples" },
-                { value: "completo", label: "Cadastro completo" },
-              ]}
-            />
-          </div>
-          {soilMode === "completo" && (
-            <p className="-mt-2 text-xs text-muted-foreground">
-              Os campos abaixo continuam valendo como base; o laudo, logo abaixo do mapa, substitui o que medir.
-            </p>
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Textura">
-              {(p) => (
-                <Select {...p} value={values.texture} onChange={(e) => set("texture", e.target.value as PropertyFormValues["texture"])}>
-                  {Object.entries(SOIL_TEXTURE_LABEL).map(([k, l]) => (
-                    <option key={k} value={k}>
-                      {l}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-            <Field label="Drenagem">
-              {(p) => (
-                <Select {...p} value={values.drainage} onChange={(e) => set("drainage", e.target.value as PropertyFormValues["drainage"])}>
-                  {Object.entries(DRAINAGE_LABEL).map(([k, l]) => (
-                    <option key={k} value={k}>
-                      {l}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-            <Field label="pH" optional error={errors.ph}>
-              {(p) => <Input {...p} inputMode="decimal" value={values.ph} onChange={(e) => set("ph", e.target.value)} placeholder="5,5" />}
-            </Field>
-            <Field label="M.O. (%)" optional error={errors.organicMatter}>
-              {(p) => <Input {...p} inputMode="decimal" value={values.organicMatter} onChange={(e) => set("organicMatter", e.target.value)} placeholder="1,8" />}
-            </Field>
-          </div>
-          <CheckboxCard checked={values.compaction} onCheckedChange={(v) => set("compaction", v)} label="Sinais de compactação" />
-          <CheckboxCard checked={values.erosionHistory} onCheckedChange={(v) => set("erosionHistory", v)} label="Histórico de erosão" />
-          <Field label="Observações" optional error={errors.notes}>
-            {(p) => <Textarea {...p} rows={2} value={values.notes} onChange={(e) => set("notes", e.target.value)} />}
-          </Field>
-
-          <div className="flex gap-2 pt-1">
-            <Link to="/propriedades" className={buttonVariants({ variant: "outline", className: "flex-1" })}>
+          <div className="flex gap-2 rounded-b-lg border-t border-border bg-muted/40 px-5 py-3">
+            <Link to="/propriedades" className={buttonVariants({ variant: "ghost", className: "flex-1" })}>
               Cancelar
             </Link>
-            <Button type="submit" loading={saving} className="flex-1">
-              {isEdit ? "Salvar" : "Cadastrar"}
+            <Button type="submit" loading={saving} className="flex-[2]">
+              {isEdit ? "Salvar alterações" : "Cadastrar propriedade"}
             </Button>
           </div>
         </Card>

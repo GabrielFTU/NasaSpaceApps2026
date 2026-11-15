@@ -17,7 +17,7 @@ import type { DataOrigin, PeriodKey, UserProfile } from "@/types";
 const SECTIONS = [
   { id: "perfil", label: "Perfil", icon: User },
   { id: "preferencias", label: "Preferências", icon: SlidersHorizontal },
-  { id: "fontes", label: "Fontes de dados", icon: Database },
+  { id: "fontes", label: "Dados NASA", icon: Database },
   { id: "sincronizacao", label: "Sincronização", icon: RefreshCw },
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -189,7 +189,7 @@ function SourcesSection() {
   return (
     <div className="animate-in flex flex-col gap-4">
       <Card className="flex items-center gap-4 p-5">
-        <NasaMark className="h-12" />
+        <NasaMark className="size-11" />
         <div className="flex-1">
           <label htmlFor="real-data" className="font-semibold">
             Dados reais da NASA

@@ -93,7 +93,7 @@ export function LayerBar({ active, onSelect }: { active: LayerId | null; onSelec
     <div
       role="radiogroup"
       aria-label="Camada do mapa"
-      className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-surface/95 p-1 shadow-md backdrop-blur [scrollbar-width:none]"
+      className="flex max-w-full gap-1 overflow-x-auto rounded-lg glass p-1  [scrollbar-width:none]"
     >
       {CHIPS.map((c) => {
         const on = current?.key === c.key;
